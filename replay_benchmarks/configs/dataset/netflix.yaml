@@ -1,0 +1,6 @@
+path: "./data/netflix.csv"
+feature_schema:
+  query_column: "user_id"
+  item_column: "movie_id"
+  rating_column: "rating"
+  timestamp_column: "timestamp"

@@ -1,0 +1,7 @@
+name: train
+
+trainer_params:
+  batch_size: 512
+  num_workers: 4
+  epochs: 100
+  learning_rate: 0.001
