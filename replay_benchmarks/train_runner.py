@@ -180,13 +180,13 @@ class TrainRunner(BaseRunner):
 
         validation_metrics_callback = ValidationMetricsCallback(
             metrics=self.config.metrics.types,
-            ks=self.config.metrics_ks,
+            ks=self.config.metrics.ks,
             item_count=train_dataset.item_count,
             postprocessors=[RemoveSeenItems(val_dataset)],
         )
 
         trainer = L.Trainer(
-            max_epochs=self.model_cfg.params.epochs,
+            max_epochs=self.model_cfg.params.max_epochs,
             callbacks=[checkpoint_callback, validation_metrics_callback],
             logger=self.logger,
         )

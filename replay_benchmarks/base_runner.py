@@ -33,6 +33,9 @@ class BaseRunner(ABC):
         self.model_cfg = config.model
         self.mode = config.mode.name
         self.tokenizer = None
+        self.interactions = None
+        self.user_features = None
+        self.item_features = None
         self.tensor_schema = self.build_tensor_schema()
         self.setup_environment()
 
@@ -42,7 +45,9 @@ class BaseRunner(ABC):
         DataFrameLike, DataFrameLike, DataFrameLike, DataFrameLike, DataFrameLike
     ]:
         """Load dataset and split into train, validation, and test sets."""
-        interactions = pd.read_csv(self.dataset_cfg.path)
+        self.interactions = pd.read_csv(os.path.join(self.dataset_cfg.path, 'interactions.csv'))
+        self.user_features = pd.read_csv(os.path.join(self.dataset_cfg.path, 'user_features.csv'))
+        self.item_features = pd.read_csv(os.path.join(self.dataset_cfg.path, 'item_features.csv'))
         splitter = LastNSplitter(
             N=1,
             divide_column=self.dataset_cfg.feature_schema.query_column,
@@ -51,7 +56,7 @@ class BaseRunner(ABC):
         )
 
         train_events, validation_events, validation_gt, test_events, test_gt = (
-            self._split_data(splitter, interactions)
+            self._split_data(splitter, self.interactions)
         )
         logging.info("Data split into train, validation, and test sets")
         return train_events, validation_events, validation_gt, test_events, test_gt
@@ -130,17 +135,40 @@ class BaseRunner(ABC):
         ground_truth_schema = self.prepare_feature_schema(is_ground_truth=True)
 
         train_dataset = Dataset(
-            feature_schema=feature_schema, interactions=train_events
+            feature_schema=feature_schema,
+            interactions=train_events,
+            query_features=self.user_features,
+            item_features=self.item_features,
+            check_consistency=True,
+            categorical_encoded=False,
         )
         validation_dataset = Dataset(
-            feature_schema=feature_schema, interactions=validation_events
+            feature_schema=feature_schema, 
+            interactions=validation_events,
+            query_features=self.user_features,
+            item_features=self.item_features,
+            check_consistency=True,
+            categorical_encoded=False,
         )
         validation_gt_dataset = Dataset(
-            feature_schema=ground_truth_schema, interactions=validation_gt
+            feature_schema=ground_truth_schema,
+            interactions=validation_gt,
+            check_consistency=True,
+            categorical_encoded=False,
         )
-        test_dataset = Dataset(feature_schema=feature_schema, interactions=test_events)
+        test_dataset = Dataset(
+            feature_schema=feature_schema,
+            interactions=test_events,
+            query_features=self.user_features,
+            item_features=self.item_features,
+            check_consistency=True,
+            categorical_encoded=False,
+        )
         test_gt_dataset = Dataset(
-            feature_schema=ground_truth_schema, interactions=test_gt
+            feature_schema=ground_truth_schema,
+            interactions=test_gt,
+            check_consistency=True,
+            categorical_encoded=False,
         )
 
         return (
