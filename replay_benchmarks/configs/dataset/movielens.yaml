@@ -1,4 +1,4 @@
-path: "/app/replay_benchmarks/data/movielens_1m.csv"
+path: "/app/replay_benchmarks/data/"
 feature_schema:
   query_column: "user_id"
   item_column: "item_id"

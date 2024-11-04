@@ -1,10 +1,12 @@
 name: sasrec
 params:
-  block_count: 2
+  block_count: 4
   head_count: 2
-  max_sequence_length: 200
+  max_sequence_length: 100
   hidden_size: 300
-  dropout_rate: 0.5
+  dropout_rate: 0.1
   batch_size: 512
   num_workers: 4
   embedding_dim: 300
+  learning_rate: 0.001
+  max_epochs: 100

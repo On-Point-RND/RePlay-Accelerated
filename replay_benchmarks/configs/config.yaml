@@ -16,3 +16,15 @@ paths:
   log_dir: "replay_benchmarks/artifacts/logs/"
   checkpoint_dir: "replay_benchmarks/artifacts/checkpoints/"
   results_dir: "replay_benchmarks/artifacts/results/"
+
+metrics:
+  types:
+    - recall
+    - precision
+    - map
+    - ndcg
+  ks:
+    - 1
+    - 5
+    - 10
+    - 20
