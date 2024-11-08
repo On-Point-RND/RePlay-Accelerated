@@ -14,4 +14,4 @@ RUN pip install --no-cache-dir --upgrade pip wheel poetry==1.5.1 poetry-dynamic-
     && python -m poetry config virtualenvs.create false
 COPY . RePlay-Accelerated/
 RUN cd RePlay-Accelerated && ./poetry_wrapper.sh install --all-extras
-CMD ["/bin/bash"]
+CMD jupyter notebook --allow-root --ip='0.0.0.0' --port=8890 --NotebookApp.token='' --NotebookApp.password=''
