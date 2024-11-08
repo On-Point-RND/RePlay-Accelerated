@@ -1,0 +1,15 @@
+#! /bin/bash
+source credentials
+
+docker run \
+  -d \
+  --shm-size=8g \
+  --memory=120g \
+  --cpus=16 \
+  --name ${CONTAINER_NAME} \
+  --rm -it --init \
+  --gpus '"device=1"' \
+  -v /home/${USER}/${SRC}:/app \
+  ${DOCKER_NAME} bash
+
+#   --user ${DOCKER_USER_ID}:${DOCKER_GROUP_ID} \

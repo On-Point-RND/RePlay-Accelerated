@@ -190,3 +190,5 @@ d3rlpy_logs/
 
 # datasets
 replay_benchmarks/data
+replay/*
+replay_main/*

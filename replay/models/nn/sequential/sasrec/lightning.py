@@ -191,6 +191,8 @@ class SasRec(lightning.LightningModule):
             loss_func = self._compute_loss_bce if self._loss_sample_count is None else self._compute_loss_bce_sampled
         elif self._loss_type == "CE":
             loss_func = self._compute_loss_ce if self._loss_sample_count is None else self._compute_loss_ce_sampled
+        elif self._loss_type == "SCE":
+            loss_func = self._compute_loss_sce if self._loss_sample_count is None else self._compute_loss_sce_sampled
         else:
             msg = f"Not supported loss type: {self._loss_type}"
             raise ValueError(msg)
@@ -307,6 +309,86 @@ class SasRec(lightning.LightningModule):
         labels_flat = torch.zeros(positive_logits.size(0), dtype=torch.long, device=padding_mask.device)
         loss = self._loss(logits, labels_flat)
         return loss
+    
+    def _compute_loss_sce(
+        self,
+        feature_tensors: TensorMap,
+        positive_labels: torch.LongTensor,
+        padding_mask: torch.BoolTensor,
+        target_padding_mask: torch.BoolTensor,
+    ) -> torch.Tensor:
+        
+        # logits = self._model.forward(
+        #     feature_tensors,
+        #     padding_mask,
+        # )
+
+        # # labels: [B x L]
+        # labels = positive_labels.masked_fill(mask=(~target_padding_mask), value=-100)
+
+        # logits_flat = logits.view(-1, logits.size(-1))  # [(B * L) x V]
+        # labels_flat = labels.view(-1)  # [(B * L)]
+
+        # loss = self._loss(logits_flat, labels_flat)
+        # return loss
+        # logits: [B x L x V]
+
+        emb = self._model.forward_step(
+            feature_tensors,
+            padding_mask,
+        )
+             # return log embeddings
+        hd = emb.shape[-1] # emb_size
+
+        x = emb.view(-1, hd)
+        y = positive_labels.view(-1).masked_fill(mask=(~target_padding_mask), value=-100)
+        w = self.item_emb.weight
+
+        #HP
+        self.n_buckets = 658
+        self.bucket_size_x = 658
+        self.bucket_size_y = 256
+        self.mix_x = True
+
+        correct_class_logits_ = (x * torch.index_select(w, dim=0, index=y)).sum(dim=1) # (bs,)
+
+        with torch.no_grad():
+            if self.mix_x:
+                omega = 1/torch.sqrt(torch.sqrt(hd)) * torch.randn(x.shape[0], self.n_buckets, device=x.device)
+                buckets = omega.T @ x
+                del omega
+            else:
+                buckets = 1/torch.sqrt(torch.sqrt(hd)) * torch.randn(self.n_buckets, hd, device=x.device) # (n_b, hd)
+
+        with torch.no_grad():
+            x_bucket = buckets @ x.T # (n_b, hd) x (hd, b) -> (n_b, b)
+            x_bucket[:, padding_mask] = float('-inf')
+            _, top_x_bucket = torch.topk(x_bucket, dim=1, k=self.bucket_size_x) # (n_b, bs_x)
+            del x_bucket
+
+            y_bucket = buckets @ w.T # (n_b, hd) x (hd, n_cl) -> (n_b, n_cl)
+
+            y_bucket[:, target_padding_mask] = float('-inf')
+            _, top_y_bucket = torch.topk(y_bucket, dim=1, k=self.bucket_size_y) # (n_b, bs_y)
+            del y_bucket
+
+        x_bucket = torch.gather(x, 0, top_x_bucket.view(-1, 1).expand(-1, hd)).view(self.n_buckets, self.bucket_size_x, hd) # (n_b, bs_x, hd)
+        y_bucket = torch.gather(w, 0, top_y_bucket.view(-1, 1).expand(-1, hd)).view(self.n_buckets, self.bucket_size_y, hd) # (n_b, bs_y, hd)
+        
+        wrong_class_logits = (x_bucket @ y_bucket.transpose(-1, -2)) # (n_b, bs_x, bs_y)
+        mask = torch.index_select(y, dim=0, index=top_x_bucket.view(-1)).view(self.n_buckets, self.bucket_size_x)[:, :, None] == top_y_bucket[:, None, :] # (n_b, bs_x, bs_y)
+        wrong_class_logits = wrong_class_logits.masked_fill(mask, float('-inf')) # (n_b, bs_x, bs_y)
+        correct_class_logits = torch.index_select(correct_class_logits_, dim=0, index=top_x_bucket.view(-1)).view(self.n_buckets, self.bucket_size_x)[:, :, None] # (n_b, bs_x, 1)
+        logits = torch.cat((wrong_class_logits, correct_class_logits), dim=2) # (n_b, bs_x, bs_y + 1)
+
+        loss_ = self._loss(logits.view(-1, logits.shape[-1]), (logits.shape[-1] - 1) * torch.ones(logits.shape[0] * logits.shape[1], dtype=torch.int64, device=logits.device), reduction='none') # (n_b * bs_x,)
+        loss = torch.zeros(x.shape[0], device=x.device, dtype=x.dtype)
+        loss.scatter_reduce_(0, top_x_bucket.view(-1), loss_, reduce='amax', include_self=False)
+        loss = loss[(loss != 0) & (~target_padding_mask)]
+        loss = torch.mean(loss)
+
+        return loss
+
 
     def _get_sampled_logits(
         self,
@@ -392,10 +474,10 @@ class SasRec(lightning.LightningModule):
         if self._loss_type == "BCE":
             return torch.nn.BCEWithLogitsLoss(reduction="sum")
 
-        if self._loss_type == "CE":
+        if self._loss_type == "CE" or self._loss_type == "SCE":
             return torch.nn.CrossEntropyLoss()
 
-        msg = "Not supported loss_type"
+        msg = "Not supported loss_type AAAAAAAAAAAAAAAAAAAAAA"
         raise NotImplementedError(msg)
 
     def get_all_embeddings(self) -> Dict[str, torch.nn.Embedding]:
