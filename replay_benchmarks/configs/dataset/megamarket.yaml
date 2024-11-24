@@ -1,11 +1,11 @@
 dataset:
-  name: zvuk
-  path: "./replay_benchmarks/data/zvuk"
+  name: megamarket
+  path: "./replay_benchmarks/data/megamarket"
 
   feature_schema:
     query_column: "user_id"
-    item_column: "track_id"
-    rating_column: "play_duration"
+    item_column: "item_id"
+    rating_column: "rating"
     timestamp_column: "datetime"
 
   preprocess:

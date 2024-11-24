@@ -1,9 +1,8 @@
 defaults:
-  - dataset: movielens
+  - dataset: megamarket
   - model: sasrec
   - mode: train
   - acceleration: null
-  - _self_
 
 env:
   CUDA_DEVICE_ORDER: "PCI_BUS_ID" 
@@ -19,10 +18,12 @@ paths:
 
 metrics:
   types:
+    - ndcg
     - recall
+    - hitrate
     - precision
     - map
-    - ndcg
+    - mrr
   ks:
     - 1
     - 5
