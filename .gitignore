@@ -190,3 +190,5 @@ d3rlpy_logs/
 
 # datasets
 replay_benchmarks/data
+# logs and checkpoints
+replay_benchmarks/artifacts

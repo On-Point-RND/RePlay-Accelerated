@@ -1,32 +1,29 @@
 """Main module"""
 
+import os
 import logging
 import warnings
+import yaml
 
-import hydra
-from omegaconf import DictConfig, OmegaConf
-
+from replay_benchmarks.utils.conf import load_config
 from replay_benchmarks import TrainRunner, InferRunner
 
 logging.basicConfig(level=logging.INFO)
 warnings.filterwarnings("ignore")
 
 
-@hydra.main(config_path="replay_benchmarks/configs", config_name="config")
-def main(config: DictConfig) -> None:
-    """Main function.
+def main() -> None:
+    config_dir = "./replay_benchmarks/configs"
+    base_config_path = os.path.join(config_dir, "config.yaml")
+    config = load_config(base_config_path, config_dir)
+    logging.info("Configuration:\n%s", yaml.dump(config))
 
-    Args:
-        cfg (DictConfig): Hydra Config
-    """
-    logging.info("Configuration:\n%s", OmegaConf.to_yaml(config))
-
-    if config.mode.name == "train":
+    if config["mode"]["name"] == "train":
         runner = TrainRunner(config)
-    elif config.mode.name == "infer":
+    elif config["mode"]["name"] == "infer":
         runner = InferRunner(config)
     else:
-        raise ValueError(f"Unsupported mode: {config.mode}")
+        raise ValueError(f"Unsupported mode: {config['mode']}")
 
     runner.run()
 

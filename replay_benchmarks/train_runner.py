@@ -1,11 +1,11 @@
 import logging
-from typing import Tuple
-from omegaconf import DictConfig
+import os
+
 import lightning as L
 from lightning.pytorch.loggers import CSVLogger
 from lightning.pytorch.callbacks import ModelCheckpoint
 from torch.utils.data import DataLoader
-import torch
+from torch.profiler import profile, record_function, ProfilerActivity, schedule
 
 from replay_benchmarks.base_runner import BaseRunner
 from replay.metrics import OfflineMetrics, Recall, Precision, MAP, NDCG, HitRate, MRR
@@ -27,21 +27,23 @@ from replay.models.nn.sequential.bert4rec import (
 
 
 class TrainRunner(BaseRunner):
-    def __init__(self, config: DictConfig):
+    def __init__(self, config):
         super().__init__(config)
-        self.logger = CSVLogger(save_dir=config.paths.log_dir, name=config.model.name)
+        self.logger = CSVLogger(
+            save_dir=config["paths"]["log_dir"], name=self.model_name
+        )
 
     def initialize_model(self):
         """Initialize the model based on the configuration."""
         model_config = {
             "tensor_schema": self.tensor_schema,
-            "block_count": self.model_cfg.params.block_count,
-            "head_count": self.model_cfg.params.head_count,
-            "max_seq_len": self.model_cfg.params.max_sequence_length,
-            "hidden_size": self.model_cfg.params.hidden_size,
-            "dropout_rate": self.model_cfg.params.dropout_rate,
+            "block_count": self.model_cfg["block_count"],
+            "head_count": self.model_cfg["head_count"],
+            "max_seq_len": self.model_cfg["max_sequence_length"],
+            "hidden_size": self.model_cfg["hidden_size"],
+            "dropout_rate": self.model_cfg["dropout_rate"],
             "optimizer_factory": FatOptimizerFactory(
-                learning_rate=self.model_cfg.params.learning_rate
+                learning_rate=self.model_cfg["learning_rate"]
             ),
         }
 
@@ -60,6 +62,7 @@ class TrainRunner(BaseRunner):
         seq_test_dataset,
     ):
         """Initialize dataloaders for training, validation, and testing."""
+        logging.info("Preparing dataloaders objects...")
         dataset_mapping = {
             "sasrec": (
                 SasRecTrainingDataset,
@@ -72,6 +75,7 @@ class TrainRunner(BaseRunner):
                 Bert4RecPredictionDataset,
             ),
         }
+
         try:
             TrainingDataset, ValidationDataset, PredictionDataset = dataset_mapping[
                 self.model_name.lower()
@@ -82,15 +86,15 @@ class TrainRunner(BaseRunner):
             )
 
         common_params = {
-            "batch_size": self.model_cfg.params.batch_size,
-            "num_workers": self.model_cfg.params.num_workers,
+            "batch_size": self.model_cfg["batch_size"],
+            "num_workers": self.model_cfg["num_workers"],
             "pin_memory": True,
         }
 
         train_dataloader = DataLoader(
             dataset=TrainingDataset(
                 seq_train_dataset,
-                max_sequence_length=self.model_cfg.params.max_sequence_length,
+                max_sequence_length=self.model_cfg["max_sequence_length"],
             ),
             shuffle=True,
             **common_params,
@@ -100,14 +104,14 @@ class TrainRunner(BaseRunner):
                 seq_validation_dataset,
                 seq_validation_gt,
                 seq_train_dataset,
-                max_sequence_length=self.model_cfg.params.max_sequence_length,
+                max_sequence_length=self.model_cfg["max_sequence_length"],
             ),
             **common_params,
         )
         prediction_dataloader = DataLoader(
             dataset=PredictionDataset(
                 seq_test_dataset,
-                max_sequence_length=self.model_cfg.params.max_sequence_length,
+                max_sequence_length=self.model_cfg["max_sequence_length"],
             ),
             **common_params,
         )
@@ -116,7 +120,7 @@ class TrainRunner(BaseRunner):
 
     def calculate_metrics(self, predictions, ground_truth):
         """Calculate and return the desired metrics based on the predictions."""
-        top_k = self.config.metrics_ks
+        top_k = self.config["metrics"]["ks"]
         metrics_list = [
             Recall(top_k),
             Precision(top_k),
@@ -133,7 +137,7 @@ class TrainRunner(BaseRunner):
     def save_model(self, model, checkpoint_callback):
         """Save the best model checkpoint to the specified directory."""
         best_model_path = checkpoint_callback.best_model_path
-        save_path = self.config.paths.model_dir
+        save_path = self.config["paths"]["model_dir"]
         model.load_from_checkpoint(best_model_path).save(
             f"{save_path}/{self.model_name}_best.pt"
         )
@@ -172,25 +176,39 @@ class TrainRunner(BaseRunner):
 
         model = self.initialize_model()
         checkpoint_callback = ModelCheckpoint(
-            dirpath=self.config.paths.checkpoint_dir,
+            dirpath=self.config["paths"]["checkpoint_dir"],
             save_top_k=1,
+            verbose=True,
             monitor="recall@10",
             mode="max",
         )
 
         validation_metrics_callback = ValidationMetricsCallback(
-            metrics=self.config.metrics.types,
-            ks=self.config.metrics.ks,
+            metrics=self.config["metrics"]["types"],
+            ks=self.config["metrics"]["ks"],
             item_count=train_dataset.item_count,
-            postprocessors=[RemoveSeenItems(val_dataset)],
+            postprocessors=[RemoveSeenItems(seq_validation_dataset)],
         )
 
         trainer = L.Trainer(
-            max_epochs=self.model_cfg.params.max_epochs,
+            max_epochs=self.model_cfg["max_epochs"],
             callbacks=[checkpoint_callback, validation_metrics_callback],
             logger=self.logger,
         )
 
         logging.info("Starting model training.")
-        trainer.fit(model, train_dataloader, val_dataloader)
+        with profile(
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            record_shapes=True,
+            with_flops=True,
+            profile_memory=True,
+        ) as prof:
+            trainer.fit(model, train_dataloader, val_dataloader)
+
+        prof.export_chrome_trace(
+            os.path.join(
+                self.config["paths"]["log_dir"],
+                f"{self.model_name}_{self.dataset_name}_profile.json",
+            )
+        )
         logging.info("Training completed.")
