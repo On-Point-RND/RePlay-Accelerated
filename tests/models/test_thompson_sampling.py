@@ -1,7 +1,7 @@
 import pytest
 
-from replay.models import ThompsonSampling
-from replay.utils import PYSPARK_AVAILABLE
+from replay_main.models import ThompsonSampling
+from replay_main.utils import PYSPARK_AVAILABLE
 from tests.utils import create_dataset
 
 if PYSPARK_AVAILABLE:

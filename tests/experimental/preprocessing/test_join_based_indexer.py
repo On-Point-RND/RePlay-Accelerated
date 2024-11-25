@@ -5,7 +5,7 @@ torch = pytest.importorskip("torch")
 
 from pyspark.sql import functions as sf
 
-from replay.experimental.preprocessing.data_preparator import JoinBasedIndexerEstimator, JoinBasedIndexerTransformer
+from replay_main.experimental.preprocessing.data_preparator import JoinBasedIndexerEstimator, JoinBasedIndexerTransformer
 
 
 @pytest.fixture(scope="module")

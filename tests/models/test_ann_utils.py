@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from replay.models.extensions.ann.index_inferers.utils import get_csr_matrix
+from replay_main.models.extensions.ann.index_inferers.utils import get_csr_matrix
 
 pyspark = pytest.importorskip("pyspark")
 

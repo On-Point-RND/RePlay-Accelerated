@@ -8,12 +8,12 @@ import pandas as pd
 import numpy as np
 import logging
 
-from replay.utils.session_handler import get_spark_session, State
-from replay.experimental.utils.logger import get_logger
+from replay_main.utils.session_handler import get_spark_session, State
+from replay_main.experimental.utils.logger import get_logger
 
-from replay.models import UCB, Wilson, RandomRec, PopRec
-from replay.experimental.scenarios.obp_wrapper.replay_offline import OBPOfflinePolicyLearner
-from replay.experimental.scenarios.obp_wrapper.utils import get_est_rewards_by_reg
+from replay_main.models import UCB, Wilson, RandomRec, PopRec
+from replay_main.experimental.scenarios.obp_wrapper.replay_offline import OBPOfflinePolicyLearner
+from replay_main.experimental.scenarios.obp_wrapper.utils import get_est_rewards_by_reg
 
 from sklearn.ensemble import RandomForestClassifier as RandomForest
 from sklearn.linear_model import LogisticRegression

@@ -9,20 +9,20 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from replay.data import FeatureHint, FeatureSource, FeatureType
-from replay.preprocessing import LabelEncoder
-from replay.utils import TORCH_AVAILABLE, MissingImportType
+from replay_main.data import FeatureHint, FeatureSource, FeatureType
+from replay_main.preprocessing import LabelEncoder
+from replay_main.utils import TORCH_AVAILABLE, MissingImportType
 
 if TORCH_AVAILABLE:
-    from replay.data.nn import (
+    from replay_main.data.nn import (
         SequenceTokenizer,
         SequentialDataset,
         TensorFeatureInfo,
         TensorFeatureSource,
         TensorSchema,
     )
-    from replay.data.nn.sequence_tokenizer import _SequenceProcessor
-    from replay.experimental.nn.data.schema_builder import TensorSchemaBuilder
+    from replay_main.data.nn.sequence_tokenizer import _SequenceProcessor
+    from replay_main.experimental.nn.data.schema_builder import TensorSchemaBuilder
 else:
     TensorSchema = MissingImportType
     SequentialDataset = MissingImportType

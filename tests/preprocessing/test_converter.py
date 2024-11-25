@@ -1,7 +1,7 @@
 import pytest
 
-from replay.preprocessing import CSRConverter
-from replay.utils import PYSPARK_AVAILABLE, PandasDataFrame
+from replay_main.preprocessing import CSRConverter
+from replay_main.utils import PYSPARK_AVAILABLE, PandasDataFrame
 
 if PYSPARK_AVAILABLE:
     import pyspark.sql.functions as sf

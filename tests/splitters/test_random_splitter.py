@@ -3,8 +3,8 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from replay.splitters import RandomSplitter
-from replay.utils import PYSPARK_AVAILABLE, SparkDataFrame
+from replay_main.splitters import RandomSplitter
+from replay_main.utils import PYSPARK_AVAILABLE, SparkDataFrame
 
 if PYSPARK_AVAILABLE:
     import pyspark.sql.functions as sf

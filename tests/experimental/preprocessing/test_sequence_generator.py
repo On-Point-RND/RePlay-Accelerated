@@ -4,8 +4,8 @@ import pytest
 pyspark = pytest.importorskip("pyspark")
 torch = pytest.importorskip("torch")
 
-from replay.experimental.preprocessing import SequenceGenerator
-from replay.utils import PYSPARK_AVAILABLE, PandasDataFrame, SparkDataFrame
+from replay_main.experimental.preprocessing import SequenceGenerator
+from replay_main.utils import PYSPARK_AVAILABLE, PandasDataFrame, SparkDataFrame
 from tests.preprocessing.conftest import (
     columns,
     columns_target,

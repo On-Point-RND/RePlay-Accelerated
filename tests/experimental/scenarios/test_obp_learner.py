@@ -13,10 +13,10 @@ if sys.version_info >= (3, 10):
 pyspark = pytest.importorskip("pyspark")
 torch = pytest.importorskip("torch")
 
-from replay.experimental.scenarios.obp_wrapper.replay_offline import OBPOfflinePolicyLearner
-from replay.experimental.scenarios.obp_wrapper.utils import split_bandit_feedback
-from replay.experimental.utils.logger import get_logger
-from replay.models import RandomRec
+from replay_main.experimental.scenarios.obp_wrapper.replay_offline import OBPOfflinePolicyLearner
+from replay_main.experimental.scenarios.obp_wrapper.utils import split_bandit_feedback
+from replay_main.experimental.utils.logger import get_logger
+from replay_main.models import RandomRec
 
 
 @pytest.fixture(scope="module")

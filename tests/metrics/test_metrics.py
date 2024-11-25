@@ -6,7 +6,7 @@ import polars as pl
 import pytest
 from pytest import approx
 
-from replay.metrics import (
+from replay_main.metrics import (
     MAP,
     MRR,
     NDCG,
@@ -26,8 +26,8 @@ from replay.metrics import (
     Surprisal,
     Unexpectedness,
 )
-from replay.metrics.base_metric import MetricDuplicatesWarning
-from replay.utils import DataFrameLike, PandasDataFrame, PolarsDataFrame, SparkDataFrame
+from replay_main.metrics.base_metric import MetricDuplicatesWarning
+from replay_main.utils import DataFrameLike, PandasDataFrame, PolarsDataFrame, SparkDataFrame
 
 ABS = 1e-5
 QUERY_COLUMN = "uid"

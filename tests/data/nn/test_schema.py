@@ -1,12 +1,12 @@
 import pytest
 
-from replay.data import FeatureHint, FeatureSource, FeatureType
-from replay.utils import TORCH_AVAILABLE
+from replay_main.data import FeatureHint, FeatureSource, FeatureType
+from replay_main.utils import TORCH_AVAILABLE
 
 if TORCH_AVAILABLE:
-    from replay.data.nn import TensorFeatureInfo, TensorFeatureSource
-    from replay.data.nn.schema import TensorSchema
-    from replay.experimental.nn.data.schema_builder import TensorSchemaBuilder
+    from replay_main.data.nn import TensorFeatureInfo, TensorFeatureSource
+    from replay_main.data.nn.schema import TensorSchema
+    from replay_main.experimental.nn.data.schema_builder import TensorSchemaBuilder
 
 
 @pytest.mark.torch

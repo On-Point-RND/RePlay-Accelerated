@@ -3,8 +3,8 @@ import pytest
 pyspark = pytest.importorskip("pyspark")
 torch = pytest.importorskip("torch")
 
-from replay.experimental.preprocessing import Padder
-from replay.utils import SparkDataFrame
+from replay_main.experimental.preprocessing import Padder
+from replay_main.utils import SparkDataFrame
 from tests.preprocessing.conftest import (
     dataframe,
     dataframe_only_item,

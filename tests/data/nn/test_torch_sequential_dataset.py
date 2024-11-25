@@ -6,20 +6,20 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from replay.data import FeatureHint, FeatureType
-from replay.utils import TORCH_AVAILABLE, MissingImportType
+from replay_main.data import FeatureHint, FeatureType
+from replay_main.utils import TORCH_AVAILABLE, MissingImportType
 
 if TORCH_AVAILABLE:
     import torch
 
-    from replay.data.nn import (
+    from replay_main.data.nn import (
         PandasSequentialDataset,
         SequentialDataset,
         TensorFeatureInfo,
         TorchSequentialDataset,
         TorchSequentialValidationDataset,
     )
-    from replay.experimental.nn.data.schema_builder import TensorSchemaBuilder
+    from replay_main.experimental.nn.data.schema_builder import TensorSchemaBuilder
 else:
     PandasSequentialDataset = MissingImportType
     SequentialDataset = MissingImportType

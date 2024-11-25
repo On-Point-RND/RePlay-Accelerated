@@ -2,7 +2,7 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from replay.splitters import KFolds
+from replay_main.splitters import KFolds
 
 
 @pytest.fixture(scope="module")

@@ -1,6 +1,6 @@
 import pytest
 
-from replay.splitters import (
+from replay_main.splitters import (
     ColdUserRandomSplitter,
     KFolds,
     LastNSplitter,
@@ -10,7 +10,7 @@ from replay.splitters import (
     TimeSplitter,
     TwoStageSplitter,
 )
-from replay.utils.common import load_from_replay, save_to_replay
+from replay_main.utils.common import load_from_replay, save_to_replay
 
 
 @pytest.mark.core

@@ -10,11 +10,11 @@ from optuna.exceptions import ExperimentalWarning
 from pyspark.sql import functions as sf
 from rs_datasets import MovieLens
 
-from replay.experimental.models import DDPG
-from replay.metrics import MAP, MRR, NDCG, Coverage, Experiment, HitRate, Surprisal
-from replay.preprocessing import DataPreparator, Indexer
-from replay.splitters import TimeSplitter
-from replay.utils import State
+from replay_main.experimental.models import DDPG
+from replay_main.metrics import MAP, MRR, NDCG, Coverage, Experiment, HitRate, Surprisal
+from replay_main.preprocessing import DataPreparator, Indexer
+from replay_main.splitters import TimeSplitter
+from replay_main.utils import State
 
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)

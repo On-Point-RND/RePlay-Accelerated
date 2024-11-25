@@ -1,6 +1,6 @@
 import pytest
 
-from replay.utils import (
+from replay_main.utils import (
     PYSPARK_AVAILABLE,
     TORCH_AVAILABLE,
     PandasDataFrame,
@@ -10,18 +10,18 @@ from replay.utils import (
 )
 
 if TORCH_AVAILABLE:
-    from replay.models.nn.sequential.bert4rec import Bert4Rec, Bert4RecPredictionDataset
-    from replay.models.nn.sequential.callbacks import (
+    from replay_main.models.nn.sequential.bert4rec import Bert4Rec, Bert4RecPredictionDataset
+    from replay_main.models.nn.sequential.callbacks import (
         PandasPredictionCallback,
         PolarsPredictionCallback,
         QueryEmbeddingsPredictionCallback,
         TorchPredictionCallback,
         ValidationMetricsCallback,
     )
-    from replay.models.nn.sequential.postprocessors import RemoveSeenItems
+    from replay_main.models.nn.sequential.postprocessors import RemoveSeenItems
 
     if PYSPARK_AVAILABLE:
-        from replay.models.nn.sequential.callbacks import SparkPredictionCallback
+        from replay_main.models.nn.sequential.callbacks import SparkPredictionCallback
 
 torch = pytest.importorskip("torch")
 L = pytest.importorskip("lightning")

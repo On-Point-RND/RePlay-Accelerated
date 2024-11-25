@@ -1,10 +1,10 @@
 import pytest
 
-from replay.utils import TORCH_AVAILABLE
+from replay_main.utils import TORCH_AVAILABLE
 
 if TORCH_AVAILABLE:
-    from replay.models.nn.sequential.bert4rec import Bert4RecModel
-    from replay.models.nn.sequential.bert4rec.model import BertEmbedding, ClassificationHead, PositionalEmbedding
+    from replay_main.models.nn.sequential.bert4rec import Bert4RecModel
+    from replay_main.models.nn.sequential.bert4rec.model import BertEmbedding, ClassificationHead, PositionalEmbedding
 
 torch = pytest.importorskip("torch")
 

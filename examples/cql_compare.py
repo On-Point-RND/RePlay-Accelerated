@@ -10,22 +10,22 @@ import torch
 import tqdm
 from optuna.exceptions import ExperimentalWarning
 
-from replay.experimental.models import CQL, LightFMWrap
-from replay.experimental.models.cql import MdpDatasetBuilder
-from replay.experimental.preprocessing.data_preparator import DataPreparator, Indexer
-from replay.metrics import MAP, MRR, NDCG, Coverage, HitRate, Surprisal
-from replay.metrics.experiment import Experiment
-from replay.models import SLIM, UCB, ALSWrap, ItemKNN, Recommender, Wilson
-from replay.splitters import TimeSplitter
-from replay.data import Dataset, FeatureSchema, FeatureHint, FeatureInfo, FeatureType
-from replay.utils import PYSPARK_AVAILABLE, PandasDataFrame
+from replay_main.experimental.models import CQL, LightFMWrap
+from replay_main.experimental.models.cql import MdpDatasetBuilder
+from replay_main.experimental.preprocessing.data_preparator import DataPreparator, Indexer
+from replay_main.metrics import MAP, MRR, NDCG, Coverage, HitRate, Surprisal
+from replay_main.metrics.experiment import Experiment
+from replay_main.models import SLIM, UCB, ALSWrap, ItemKNN, Recommender, Wilson
+from replay_main.splitters import TimeSplitter
+from replay_main.data import Dataset, FeatureSchema, FeatureHint, FeatureInfo, FeatureType
+from replay_main.utils import PYSPARK_AVAILABLE, PandasDataFrame
 
 if PYSPARK_AVAILABLE:
     from pyspark.sql import functions as sf
 
-    from replay.experimental.utils.model_handler import load, save
-    from replay.utils.session_handler import State, get_spark_session
-    from replay.utils.spark_utils import get_log_info
+    from replay_main.experimental.utils.model_handler import load, save
+    from replay_main.utils.session_handler import State, get_spark_session
+    from replay_main.utils.spark_utils import get_log_info
 
 
 def fit_predict_add_res(

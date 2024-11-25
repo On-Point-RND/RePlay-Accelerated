@@ -5,8 +5,8 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from replay.splitters import LastNSplitter
-from replay.utils import PYSPARK_AVAILABLE
+from replay_main.splitters import LastNSplitter
+from replay_main.utils import PYSPARK_AVAILABLE
 
 if PYSPARK_AVAILABLE:
     import pyspark.sql.functions as F

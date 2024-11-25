@@ -3,11 +3,11 @@ from datetime import datetime
 import numpy as np
 import pytest
 
-from replay.data import get_schema
-from replay.models import Word2VecRec
-from replay.models.extensions.ann.entities.hnswlib_param import HnswlibParam
-from replay.models.extensions.ann.index_builders.driver_hnswlib_index_builder import DriverHnswlibIndexBuilder
-from replay.models.extensions.ann.index_stores.shared_disk_index_store import SharedDiskIndexStore
+from replay_main.data import get_schema
+from replay_main.models import Word2VecRec
+from replay_main.models.extensions.ann.entities.hnswlib_param import HnswlibParam
+from replay_main.models.extensions.ann.index_builders.driver_hnswlib_index_builder import DriverHnswlibIndexBuilder
+from replay_main.models.extensions.ann.index_stores.shared_disk_index_store import SharedDiskIndexStore
 from tests.utils import (
     create_dataset,
 )
@@ -15,7 +15,7 @@ from tests.utils import (
 pyspark = pytest.importorskip("pyspark")
 from pyspark.sql import functions as sf
 
-from replay.utils.spark_utils import vector_dot
+from replay_main.utils.spark_utils import vector_dot
 
 INTERACTIONS_SCHEMA = get_schema("user_idx", "item_idx", "timestamp", "relevance")
 

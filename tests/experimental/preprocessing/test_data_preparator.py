@@ -11,8 +11,8 @@ torch = pytest.importorskip("torch")
 from pyspark.sql import functions as sf
 from pyspark.sql.types import StringType, TimestampType
 
-from replay.experimental.preprocessing.data_preparator import CatFeaturesTransformer, DataPreparator, Indexer
-from replay.utils.spark_utils import convert2spark
+from replay_main.experimental.preprocessing.data_preparator import CatFeaturesTransformer, DataPreparator, Indexer
+from replay_main.utils.spark_utils import convert2spark
 
 
 @pytest.fixture(scope="module")

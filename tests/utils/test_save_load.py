@@ -5,10 +5,10 @@ import pytest
 
 pyspark = pytest.importorskip("pyspark")
 
-import replay
-from replay.models import ItemKNN
-from replay.preprocessing.label_encoder import LabelEncoder, LabelEncodingRule
-from replay.splitters import (
+import replay_main
+from replay_main.models import ItemKNN
+from replay_main.preprocessing.label_encoder import LabelEncoder, LabelEncodingRule
+from replay_main.splitters import (
     ColdUserRandomSplitter,
     LastNSplitter,
     NewUsersSplitter,
@@ -17,7 +17,7 @@ from replay.splitters import (
     TimeSplitter,
     TwoStageSplitter,
 )
-from replay.utils.model_handler import (
+from replay_main.utils.model_handler import (
     load,
     load_encoder,
     load_splitter,
@@ -37,7 +37,7 @@ def user_features(spark):
 
 @pytest.fixture(scope="module")
 def df():
-    folder = dirname(replay.__file__)
+    folder = dirname(replay_main.__file__)
     res = pd.read_csv(
         join(folder, "../examples/data/ml1m_ratings.dat"),
         sep="\t",

@@ -7,10 +7,10 @@ import pandas as pd
 import polars as pl
 import pytest
 
-import replay
-from replay.preprocessing import LabelEncoder, LabelEncodingRule
-from replay.splitters import RatioSplitter
-from replay.utils import PandasDataFrame
+import replay_main
+from replay_main.preprocessing import LabelEncoder, LabelEncodingRule
+from replay_main.splitters import RatioSplitter
+from replay_main.utils import PandasDataFrame
 
 recs_data = [
     (1, 3, 0.6),
@@ -178,7 +178,7 @@ def split_data(data: PandasDataFrame) -> Tuple[PandasDataFrame, PandasDataFrame]
 
 @pytest.fixture(scope="module")
 def random_train_test_recs() -> Tuple[PandasDataFrame, PandasDataFrame, PandasDataFrame]:
-    folder = dirname(replay.__file__)
+    folder = dirname(replay_main.__file__)
     ml_1m = pd.read_csv(
         join(folder, "../examples/data/ml1m_ratings.dat"),
         sep="\t",

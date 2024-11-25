@@ -13,14 +13,14 @@ from absl import flags
 from ml_collections import config_flags
 
 from pyspark.sql import SparkSession
-from replay.utils.session_handler import get_spark_session, State
-from replay.experimental.utils.logger import get_logger
-from replay.models import UCB, Wilson, RandomRec
+from replay_main.utils.session_handler import get_spark_session, State
+from replay_main.experimental.utils.logger import get_logger
+from replay_main.models import UCB, Wilson, RandomRec
 
 # from replay.experimental.models import LightFMWrap
 
-from replay.experimental.scenarios.obp_wrapper.replay_offline import OBPOfflinePolicyLearner
-from replay.experimental.scenarios.obp_wrapper.utils import get_est_rewards_by_reg, bandit_subset
+from replay_main.experimental.scenarios.obp_wrapper.replay_offline import OBPOfflinePolicyLearner
+from replay_main.experimental.scenarios.obp_wrapper.utils import get_est_rewards_by_reg, bandit_subset
 
 from sklearn.ensemble import RandomForestClassifier as RandomForest
 from sklearn.linear_model import LogisticRegression

@@ -2,13 +2,13 @@ import numpy as np
 import pytest
 from statsmodels.stats.proportion import proportion_confint
 
-from replay.models import Wilson
+from replay_main.models import Wilson
 from tests.utils import create_dataset, sparkDataFrameEqual
 
 pyspark = pytest.importorskip("pyspark")
 from pyspark.sql import functions as sf
 
-from replay.utils.spark_utils import convert2spark
+from replay_main.utils.spark_utils import convert2spark
 
 
 @pytest.fixture(scope="module")

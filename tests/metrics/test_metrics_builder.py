@@ -4,11 +4,11 @@ import numpy as np
 import pytest
 from pytest import approx
 
-from replay.metrics import MRR, Novelty, OfflineMetrics, Precision, Recall
-from replay.utils import TORCH_AVAILABLE, PandasDataFrame
+from replay_main.metrics import MRR, Novelty, OfflineMetrics, Precision, Recall
+from replay_main.utils import TORCH_AVAILABLE, PandasDataFrame
 
 if TORCH_AVAILABLE:
-    from replay.metrics.torch_metrics_builder import TorchMetricsBuilder
+    from replay_main.metrics.torch_metrics_builder import TorchMetricsBuilder
 
 torch = pytest.importorskip("torch")
 

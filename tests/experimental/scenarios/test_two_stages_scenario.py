@@ -5,16 +5,16 @@ torch = pytest.importorskip("torch")
 
 from pyspark.sql import functions as sf
 
-from replay.experimental.models import (
+from replay_main.experimental.models import (
     LightFMWrap,
     ScalaALSWrap as ALSWrap,
 )
-from replay.experimental.preprocessing.data_preparator import ToNumericFeatureTransformer
-from replay.experimental.scenarios import TwoStagesScenario
-from replay.experimental.scenarios.two_stages.reranker import LamaWrap
-from replay.models import ItemKNN, PopRec
-from replay.preprocessing.history_based_fp import HistoryBasedFeaturesProcessor
-from replay.splitters import TimeSplitter
+from replay_main.experimental.preprocessing.data_preparator import ToNumericFeatureTransformer
+from replay_main.experimental.scenarios import TwoStagesScenario
+from replay_main.experimental.scenarios.two_stages.reranker import LamaWrap
+from replay_main.models import ItemKNN, PopRec
+from replay_main.preprocessing.history_based_fp import HistoryBasedFeaturesProcessor
+from replay_main.splitters import TimeSplitter
 
 
 @pytest.fixture(scope="module")

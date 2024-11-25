@@ -6,10 +6,10 @@ import pytest
 pyspark = pytest.importorskip("pyspark")
 torch = pytest.importorskip("torch")
 
-import replay
-from replay.experimental.preprocessing.data_preparator import Indexer
-from replay.experimental.utils.model_handler import load_indexer, save_indexer
-from replay.utils.spark_utils import convert2spark
+import replay_main
+from replay_main.experimental.preprocessing.data_preparator import Indexer
+from replay_main.experimental.utils.model_handler import load_indexer, save_indexer
+from replay_main.utils.spark_utils import convert2spark
 
 
 @pytest.fixture(scope="module")
@@ -21,7 +21,7 @@ def user_features(spark):
 
 @pytest.fixture(scope="module")
 def df():
-    folder = dirname(replay.__file__)
+    folder = dirname(replay_main.__file__)
     res = pd.read_csv(
         join(folder, "../examples/data/ml1m_ratings.dat"),
         sep="\t",

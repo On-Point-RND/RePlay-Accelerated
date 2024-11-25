@@ -6,14 +6,14 @@ torch = pytest.importorskip("torch")
 
 from pyspark.sql import functions as sf
 
-from replay.experimental.models import ScalaALSWrap as ALSWrap
-from replay.experimental.models.base_rec import HybridRecommender, UserRecommender
-from replay.experimental.scenarios.two_stages.two_stages_scenario import get_first_level_model_features
-from replay.experimental.utils.model_handler import save
-from replay.models.extensions.ann.entities.hnswlib_param import HnswlibParam
-from replay.models.extensions.ann.index_builders.executor_hnswlib_index_builder import ExecutorHnswlibIndexBuilder
-from replay.models.extensions.ann.index_stores.shared_disk_index_store import SharedDiskIndexStore
-from replay.utils.model_handler import load
+from replay_main.experimental.models import ScalaALSWrap as ALSWrap
+from replay_main.experimental.models.base_rec import HybridRecommender, UserRecommender
+from replay_main.experimental.scenarios.two_stages.two_stages_scenario import get_first_level_model_features
+from replay_main.experimental.utils.model_handler import save
+from replay_main.models.extensions.ann.entities.hnswlib_param import HnswlibParam
+from replay_main.models.extensions.ann.index_builders.executor_hnswlib_index_builder import ExecutorHnswlibIndexBuilder
+from replay_main.models.extensions.ann.index_stores.shared_disk_index_store import SharedDiskIndexStore
+from replay_main.utils.model_handler import load
 from tests.utils import sparkDataFrameEqual
 
 SEED = 123

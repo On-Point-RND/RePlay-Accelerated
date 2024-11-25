@@ -1,12 +1,12 @@
 import numpy as np
 import pytest
 
-from replay.models import SLIM
-from replay.models.extensions.ann.entities.nmslib_hnsw_param import NmslibHnswParam
-from replay.models.extensions.ann.index_builders.executor_nmslib_index_builder import ExecutorNmslibIndexBuilder
-from replay.models.extensions.ann.index_builders.nmslib_index_builder_mixin import NmslibIndexBuilderMixin
-from replay.models.extensions.ann.index_stores.shared_disk_index_store import SharedDiskIndexStore
-from replay.utils import PYSPARK_AVAILABLE
+from replay_main.models import SLIM
+from replay_main.models.extensions.ann.entities.nmslib_hnsw_param import NmslibHnswParam
+from replay_main.models.extensions.ann.index_builders.executor_nmslib_index_builder import ExecutorNmslibIndexBuilder
+from replay_main.models.extensions.ann.index_builders.nmslib_index_builder_mixin import NmslibIndexBuilderMixin
+from replay_main.models.extensions.ann.index_stores.shared_disk_index_store import SharedDiskIndexStore
+from replay_main.utils import PYSPARK_AVAILABLE
 from tests.utils import create_dataset
 
 if PYSPARK_AVAILABLE:

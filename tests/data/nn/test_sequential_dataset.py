@@ -7,13 +7,13 @@ import pytest
 
 pytest.importorskip("torch")
 
-from replay.data import FeatureHint
-from replay.utils import TORCH_AVAILABLE
-from replay.utils.common import load_from_replay, save_to_replay
+from replay_main.data import FeatureHint
+from replay_main.utils import TORCH_AVAILABLE
+from replay_main.utils.common import load_from_replay, save_to_replay
 
 if TORCH_AVAILABLE:
-    from replay.data.nn import PandasSequentialDataset, PolarsSequentialDataset
-    from replay.experimental.nn.data.schema_builder import TensorSchemaBuilder
+    from replay_main.data.nn import PandasSequentialDataset, PolarsSequentialDataset
+    from replay_main.experimental.nn.data.schema_builder import TensorSchemaBuilder
 
 
 @pytest.mark.torch

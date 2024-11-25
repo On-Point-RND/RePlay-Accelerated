@@ -2,7 +2,7 @@ import logging
 
 import pytest
 
-from replay.models import SLIM, ALSWrap, ItemKNN
+from replay_main.models import SLIM, ALSWrap, ItemKNN
 from tests.utils import (
     create_dataset,
     sparkDataFrameEqual,

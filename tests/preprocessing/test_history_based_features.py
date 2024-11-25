@@ -3,13 +3,13 @@ from datetime import datetime
 
 import pytest
 
-from replay.preprocessing.history_based_fp import (
+from replay_main.preprocessing.history_based_fp import (
     ConditionalPopularityProcessor,
     EmptyFeatureProcessor,
     HistoryBasedFeaturesProcessor,
     LogStatFeaturesProcessor,
 )
-from replay.utils import PYSPARK_AVAILABLE
+from replay_main.utils import PYSPARK_AVAILABLE
 from tests.utils import sparkDataFrameEqual
 
 if PYSPARK_AVAILABLE:

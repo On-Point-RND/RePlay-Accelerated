@@ -1,6 +1,6 @@
 import pytest
 
-from replay.models import RandomRec
+from replay_main.models import RandomRec
 from tests.utils import create_dataset, sparkDataFrameEqual, sparkDataFrameNotEqual
 
 pyspark = pytest.importorskip("pyspark")

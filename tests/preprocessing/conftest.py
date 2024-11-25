@@ -2,7 +2,7 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from replay.utils import PYSPARK_AVAILABLE
+from replay_main.utils import PYSPARK_AVAILABLE
 
 if PYSPARK_AVAILABLE:
     from pyspark.sql.functions import col, to_date, unix_timestamp

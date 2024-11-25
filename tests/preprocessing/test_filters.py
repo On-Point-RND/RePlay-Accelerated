@@ -5,7 +5,7 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from replay.preprocessing.filters import (
+from replay_main.preprocessing.filters import (
     EntityDaysFilter,
     GlobalDaysFilter,
     LowRatingFilter,
@@ -14,7 +14,7 @@ from replay.preprocessing.filters import (
     QuantileItemsFilter,
     TimePeriodFilter,
 )
-from replay.utils import PandasDataFrame, PolarsDataFrame, get_spark_session
+from replay_main.utils import PandasDataFrame, PolarsDataFrame, get_spark_session
 
 
 @pytest.fixture

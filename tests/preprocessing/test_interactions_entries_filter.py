@@ -1,8 +1,8 @@
 import polars as pl
 import pytest
 
-from replay.preprocessing.filters import InteractionEntriesFilter
-from replay.utils import PandasDataFrame, PolarsDataFrame
+from replay_main.preprocessing.filters import InteractionEntriesFilter
+from replay_main.utils import PandasDataFrame, PolarsDataFrame
 
 
 @pytest.fixture

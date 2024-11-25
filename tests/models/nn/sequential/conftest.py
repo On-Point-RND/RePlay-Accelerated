@@ -3,20 +3,20 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from replay.data import FeatureHint
-from replay.utils import TORCH_AVAILABLE
+from replay_main.data import FeatureHint
+from replay_main.utils import TORCH_AVAILABLE
 
 if TORCH_AVAILABLE:
     import torch
 
-    from replay.data.nn import PandasSequentialDataset, PolarsSequentialDataset
-    from replay.experimental.nn.data.schema_builder import TensorSchemaBuilder
-    from replay.models.nn.sequential.bert4rec import (
+    from replay_main.data.nn import PandasSequentialDataset, PolarsSequentialDataset
+    from replay_main.experimental.nn.data.schema_builder import TensorSchemaBuilder
+    from replay_main.models.nn.sequential.bert4rec import (
         Bert4RecPredictionDataset,
         Bert4RecTrainingDataset,
         Bert4RecValidationDataset,
     )
-    from replay.models.nn.sequential.sasrec import (
+    from replay_main.models.nn.sequential.sasrec import (
         SasRecPredictionDataset,
         SasRecTrainingDataset,
         SasRecValidationDataset,

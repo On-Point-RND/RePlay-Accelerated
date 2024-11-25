@@ -1,8 +1,8 @@
 from omegaconf import DictConfig
 
-from replay.models.nn.sequential import SasRec, Bert4Rec
+from replay_main.models.nn.sequential import SasRec, Bert4Rec
 
-from replay.utils import get_spark_session
+from replay_main.utils import get_spark_session
 from .base_runner import BaseRunner
 
 

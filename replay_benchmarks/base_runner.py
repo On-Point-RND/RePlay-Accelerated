@@ -6,7 +6,7 @@ from typing import Tuple
 import pandas as pd
 from omegaconf import DictConfig
 
-from replay.data import (
+from replay_main.data import (
     FeatureHint,
     FeatureInfo,
     FeatureSchema,
@@ -14,9 +14,9 @@ from replay.data import (
     FeatureType,
     Dataset,
 )
-from replay.splitters import LastNSplitter
-from replay.utils import DataFrameLike
-from replay.data.nn import (
+from replay_main.splitters import LastNSplitter
+from replay_main.utils import DataFrameLike
+from replay_main.data.nn import (
     SequenceTokenizer,
     SequentialDataset,
     TensorFeatureSource,

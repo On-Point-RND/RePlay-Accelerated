@@ -10,10 +10,10 @@ torch = pytest.importorskip("torch")
 
 from pyspark.sql import functions as sf
 
-from replay.data import get_schema
-from replay.experimental.models import NeuralTS
-from replay.experimental.scenarios.obp_wrapper.replay_offline import OBPOfflinePolicyLearner
-from replay.experimental.scenarios.obp_wrapper.utils import get_est_rewards_by_reg
+from replay_main.data import get_schema
+from replay_main.experimental.models import NeuralTS
+from replay_main.experimental.scenarios.obp_wrapper.replay_offline import OBPOfflinePolicyLearner
+from replay_main.experimental.scenarios.obp_wrapper.utils import get_est_rewards_by_reg
 from tests.utils import sparkDataFrameEqual
 
 SEED = 123

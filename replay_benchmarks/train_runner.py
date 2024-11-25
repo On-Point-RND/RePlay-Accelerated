@@ -8,18 +8,18 @@ from torch.utils.data import DataLoader
 import torch
 
 from replay_benchmarks.base_runner import BaseRunner
-from replay.metrics import OfflineMetrics, Recall, Precision, MAP, NDCG, HitRate, MRR
-from replay.metrics.torch_metrics_builder import metrics_to_df
-from replay.models.nn.sequential import SasRec, Bert4Rec
-from replay.models.nn.optimizer_utils import FatOptimizerFactory
-from replay.models.nn.sequential.callbacks import ValidationMetricsCallback
-from replay.models.nn.sequential.postprocessors import RemoveSeenItems
-from replay.models.nn.sequential.sasrec import (
+from replay_main.metrics import OfflineMetrics, Recall, Precision, MAP, NDCG, HitRate, MRR
+from replay_main.metrics.torch_metrics_builder import metrics_to_df
+from replay_main.models.nn.sequential import SasRec, Bert4Rec
+from replay_main.models.nn.optimizer_utils import FatOptimizerFactory
+from replay_main.models.nn.sequential.callbacks import ValidationMetricsCallback
+from replay_main.models.nn.sequential.postprocessors import RemoveSeenItems
+from replay_main.models.nn.sequential.sasrec import (
     SasRecTrainingDataset,
     SasRecValidationDataset,
     SasRecPredictionDataset,
 )
-from replay.models.nn.sequential.bert4rec import (
+from replay_main.models.nn.sequential.bert4rec import (
     Bert4RecTrainingDataset,
     Bert4RecValidationDataset,
     Bert4RecPredictionDataset,

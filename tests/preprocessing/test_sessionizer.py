@@ -2,8 +2,8 @@ from typing import List
 
 import pytest
 
-from replay.preprocessing import Sessionizer
-from replay.utils import SparkDataFrame
+from replay_main.preprocessing import Sessionizer
+from replay_main.utils import SparkDataFrame
 
 
 def _get_column_list(data, column: str) -> List[List]:

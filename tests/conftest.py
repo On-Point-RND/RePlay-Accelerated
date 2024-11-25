@@ -4,9 +4,9 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from replay.data import get_schema
-from replay.utils import PYSPARK_AVAILABLE
-from replay.utils.session_handler import get_spark_session
+from replay_main.data import get_schema
+from replay_main.utils import PYSPARK_AVAILABLE
+from replay_main.utils.session_handler import get_spark_session
 
 if PYSPARK_AVAILABLE:
     INTERACTIONS_SCHEMA = get_schema("user_idx", "item_idx", "timestamp", "relevance")

@@ -6,9 +6,9 @@ torch = pytest.importorskip("torch")
 
 import pyspark.sql.functions as sf
 
-from replay.experimental.models import MultVAE
-from replay.experimental.models.base_rec import HybridRecommender, UserRecommender
-from replay.utils.model_handler import load, save
+from replay_main.experimental.models import MultVAE
+from replay_main.experimental.models.base_rec import HybridRecommender, UserRecommender
+from replay_main.utils.model_handler import load, save
 from tests.utils import (
     sparkDataFrameEqual,
 )

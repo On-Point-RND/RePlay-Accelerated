@@ -2,8 +2,8 @@ import logging
 
 import pytest
 
-from replay.data import FeatureHint, FeatureInfo, FeatureSchema, FeatureType
-from replay.models import CatPopRec
+from replay_main.data import FeatureHint, FeatureInfo, FeatureSchema, FeatureType
+from replay_main.models import CatPopRec
 from tests.utils import create_dataset, sparkDataFrameEqual
 
 pyspark = pytest.importorskip("pyspark")

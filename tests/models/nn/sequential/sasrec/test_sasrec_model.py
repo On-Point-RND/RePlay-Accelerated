@@ -1,11 +1,11 @@
 import pytest
 
-from replay.utils import TORCH_AVAILABLE
+from replay_main.utils import TORCH_AVAILABLE
 
 if TORCH_AVAILABLE:
     import torch
 
-    from replay.models.nn.sequential.sasrec import SasRecModel
+    from replay_main.models.nn.sequential.sasrec import SasRecModel
 
 
 @pytest.mark.torch

@@ -4,7 +4,7 @@ pyspark = pytest.importorskip("pyspark")
 
 from pyspark.conf import SparkConf
 
-from replay.utils.dataframe_bucketizer import DataframeBucketizer
+from replay_main.utils.dataframe_bucketizer import DataframeBucketizer
 
 
 @pytest.mark.spark

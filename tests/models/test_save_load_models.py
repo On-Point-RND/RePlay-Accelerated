@@ -3,9 +3,9 @@ from os.path import dirname, join
 import pandas as pd
 import pytest
 
-import replay
-from replay.data import FeatureHint, FeatureInfo, FeatureSchema, FeatureType
-from replay.models import (
+import replay_main
+from replay_main.data import FeatureHint, FeatureInfo, FeatureSchema, FeatureType
+from replay_main.models import (
     SLIM,
     UCB,
     ALSWrap,
@@ -19,23 +19,23 @@ from replay.models import (
     Wilson,
     Word2VecRec,
 )
-from replay.models.extensions.ann.entities.hnswlib_param import HnswlibParam
-from replay.models.extensions.ann.entities.nmslib_hnsw_param import NmslibHnswParam
-from replay.models.extensions.ann.index_builders.driver_hnswlib_index_builder import DriverHnswlibIndexBuilder
-from replay.models.extensions.ann.index_builders.driver_nmslib_index_builder import DriverNmslibIndexBuilder
-from replay.models.extensions.ann.index_builders.executor_nmslib_index_builder import ExecutorNmslibIndexBuilder
-from replay.models.extensions.ann.index_stores.hdfs_index_store import HdfsIndexStore
-from replay.models.extensions.ann.index_stores.shared_disk_index_store import SharedDiskIndexStore
-from replay.preprocessing.label_encoder import LabelEncoder, LabelEncodingRule
-from replay.utils import PYSPARK_AVAILABLE
+from replay_main.models.extensions.ann.entities.hnswlib_param import HnswlibParam
+from replay_main.models.extensions.ann.entities.nmslib_hnsw_param import NmslibHnswParam
+from replay_main.models.extensions.ann.index_builders.driver_hnswlib_index_builder import DriverHnswlibIndexBuilder
+from replay_main.models.extensions.ann.index_builders.driver_nmslib_index_builder import DriverNmslibIndexBuilder
+from replay_main.models.extensions.ann.index_builders.executor_nmslib_index_builder import ExecutorNmslibIndexBuilder
+from replay_main.models.extensions.ann.index_stores.hdfs_index_store import HdfsIndexStore
+from replay_main.models.extensions.ann.index_stores.shared_disk_index_store import SharedDiskIndexStore
+from replay_main.preprocessing.label_encoder import LabelEncoder, LabelEncodingRule
+from replay_main.utils import PYSPARK_AVAILABLE
 from tests.utils import create_dataset, sparkDataFrameEqual
 
 if PYSPARK_AVAILABLE:
     from pyspark.sql import functions as sf
 
-    from replay.models.extensions.ann.index_stores.spark_files_index_store import SparkFilesIndexStore
-    from replay.utils.model_handler import load, save
-    from replay.utils.spark_utils import convert2spark
+    from replay_main.models.extensions.ann.index_stores.spark_files_index_store import SparkFilesIndexStore
+    from replay_main.utils.model_handler import load, save
+    from replay_main.utils.spark_utils import convert2spark
 
 
 @pytest.fixture(scope="module")
@@ -52,7 +52,7 @@ def user_features(spark):
 
 @pytest.fixture(scope="module")
 def df():
-    folder = dirname(replay.__file__)
+    folder = dirname(replay_main.__file__)
     res = pd.read_csv(
         join(folder, "../examples/data/ml1m_ratings.dat"),
         sep="\t",

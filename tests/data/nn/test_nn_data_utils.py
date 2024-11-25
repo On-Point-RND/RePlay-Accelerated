@@ -1,7 +1,7 @@
 import pytest
 
-from replay.data.nn.utils import ensure_pandas, groupby_sequences
-from replay.utils import PandasDataFrame, get_spark_session
+from replay_main.data.nn.utils import ensure_pandas, groupby_sequences
+from replay_main.utils import PandasDataFrame, get_spark_session
 
 
 @pytest.mark.parametrize(

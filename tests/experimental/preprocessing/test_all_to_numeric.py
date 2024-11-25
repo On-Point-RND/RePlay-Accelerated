@@ -7,7 +7,7 @@ torch = pytest.importorskip("torch")
 
 from pyspark.sql import functions as sf
 
-from replay.experimental.preprocessing.data_preparator import ToNumericFeatureTransformer
+from replay_main.experimental.preprocessing.data_preparator import ToNumericFeatureTransformer
 
 
 @pytest.mark.experimental

@@ -1,8 +1,8 @@
 import pandas as pd
 import pytest
 
-from replay.preprocessing import LabelEncoder, LabelEncodingRule
-from replay.utils import PYSPARK_AVAILABLE, PandasDataFrame, PolarsDataFrame
+from replay_main.preprocessing import LabelEncoder, LabelEncodingRule
+from replay_main.utils import PYSPARK_AVAILABLE, PandasDataFrame, PolarsDataFrame
 
 if PYSPARK_AVAILABLE:
     import pyspark.sql.functions as F

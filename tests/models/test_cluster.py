@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from replay.models import ClusterRec
+from replay_main.models import ClusterRec
 from tests.utils import (
     create_dataset,
     sparkDataFrameEqual,
@@ -10,7 +10,7 @@ from tests.utils import (
 pyspark = pytest.importorskip("pyspark")
 import pyspark.sql.functions as sf
 
-from replay.utils.spark_utils import convert2spark
+from replay_main.utils.spark_utils import convert2spark
 
 
 @pytest.fixture(scope="module")

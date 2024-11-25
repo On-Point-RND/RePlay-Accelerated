@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from replay.data import get_schema
+from replay_main.data import get_schema
 from tests.utils import assert_allclose, assertDictAlmostEqual, sparkDataFrameEqual
 
 pyspark = pytest.importorskip("pyspark")
@@ -14,7 +14,7 @@ torch = pytest.importorskip("torch")
 import pyspark.sql.functions as sf
 from pyspark.sql.types import ArrayType, IntegerType, StructField, StructType
 
-from replay.experimental.metrics import (
+from replay_main.experimental.metrics import (
     MAP,
     MRR,
     NDCG,
@@ -27,8 +27,8 @@ from replay.experimental.metrics import (
     Surprisal,
     Unexpectedness,
 )
-from replay.experimental.metrics.base_metric import drop_duplicates, filter_sort, get_enriched_recommendations
-from replay.utils.distributions import item_distribution
+from replay_main.experimental.metrics.base_metric import drop_duplicates, filter_sort, get_enriched_recommendations
+from replay_main.utils.distributions import item_distribution
 
 INTERACTIONS_SCHEMA = get_schema(
     query_column="user_idx",

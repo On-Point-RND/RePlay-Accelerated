@@ -3,14 +3,14 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from replay.data import Dataset, FeatureHint, FeatureInfo, FeatureSchema, FeatureSource, FeatureType
-from replay.utils import TORCH_AVAILABLE
+from replay_main.data import Dataset, FeatureHint, FeatureInfo, FeatureSchema, FeatureSource, FeatureType
+from replay_main.utils import TORCH_AVAILABLE
 
 if TORCH_AVAILABLE:
     import torch
 
-    from replay.data.nn import PandasSequentialDataset, TensorFeatureInfo, TensorFeatureSource
-    from replay.experimental.nn.data.schema_builder import TensorSchemaBuilder
+    from replay_main.data.nn import PandasSequentialDataset, TensorFeatureInfo, TensorFeatureSource
+    from replay_main.experimental.nn.data.schema_builder import TensorSchemaBuilder
 
 
 @pytest.fixture(scope="module")

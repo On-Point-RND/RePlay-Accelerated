@@ -1,12 +1,12 @@
 import pytest
 
-from replay.data import FeatureHint
-from replay.utils import TORCH_AVAILABLE
+from replay_main.data import FeatureHint
+from replay_main.utils import TORCH_AVAILABLE
 
 if TORCH_AVAILABLE:
-    from replay.experimental.nn.data.schema_builder import TensorSchemaBuilder
-    from replay.models.nn.optimizer_utils import FatLRSchedulerFactory, FatOptimizerFactory
-    from replay.models.nn.sequential.bert4rec import Bert4Rec, Bert4RecPredictionBatch, Bert4RecPredictionDataset
+    from replay_main.experimental.nn.data.schema_builder import TensorSchemaBuilder
+    from replay_main.models.nn.optimizer_utils import FatLRSchedulerFactory, FatOptimizerFactory
+    from replay_main.models.nn.sequential.bert4rec import Bert4Rec, Bert4RecPredictionBatch, Bert4RecPredictionDataset
 
 torch = pytest.importorskip("torch")
 L = pytest.importorskip("lightning")

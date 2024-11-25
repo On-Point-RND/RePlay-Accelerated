@@ -3,7 +3,7 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from replay.splitters import ColdUserRandomSplitter
+from replay_main.splitters import ColdUserRandomSplitter
 
 
 @pytest.fixture(scope="module")

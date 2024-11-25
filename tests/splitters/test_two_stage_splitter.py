@@ -5,8 +5,8 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from replay.splitters import TwoStageSplitter
-from replay.utils import PandasDataFrame
+from replay_main.splitters import TwoStageSplitter
+from replay_main.utils import PandasDataFrame
 
 log_data = [
     [0, 3, datetime(2019, 9, 12), 1.0, 1],

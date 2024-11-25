@@ -4,11 +4,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from replay.data.dataset import Dataset
-from replay.models import RandomRec
-from replay.models.base_rec import HybridRecommender, NonPersonalizedRecommender, Recommender
-from replay.utils import SparkDataFrame
-from replay.utils.spark_utils import convert2spark
+from replay_main.data.dataset import Dataset
+from replay_main.models import RandomRec
+from replay_main.models.base_rec import HybridRecommender, NonPersonalizedRecommender, Recommender
+from replay_main.utils import SparkDataFrame
+from replay_main.utils.spark_utils import convert2spark
 from tests.utils import (
     create_dataset,
 )

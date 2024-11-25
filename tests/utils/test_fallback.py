@@ -3,9 +3,9 @@ import pytest
 
 pyspark = pytest.importorskip("pyspark")
 
-from replay.models import ItemKNN
-from replay.scenarios import Fallback
-from replay.utils.spark_utils import convert2spark, fallback
+from replay_main.models import ItemKNN
+from replay_main.scenarios import Fallback
+from replay_main.utils.spark_utils import convert2spark, fallback
 from tests.utils import create_dataset, sparkDataFrameEqual
 
 

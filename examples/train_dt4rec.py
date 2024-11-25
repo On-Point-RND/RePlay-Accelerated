@@ -1,11 +1,11 @@
 from rs_datasets import MovieLens
 
-from replay.metrics import MAP, MRR, NDCG, Coverage, HitRate, Surprisal
-from replay.metrics.experiment import Experiment
-from replay.experimental.models.dt4rec.dt4rec import DT4Rec
-from replay.experimental.preprocessing.data_preparator import DataPreparator, Indexer
-from replay.splitters import TimeSplitter
-from replay.utils import PYSPARK_AVAILABLE
+from replay_main.metrics import MAP, MRR, NDCG, Coverage, HitRate, Surprisal
+from replay_main.metrics.experiment import Experiment
+from replay_main.experimental.models.dt4rec.dt4rec import DT4Rec
+from replay_main.experimental.preprocessing.data_preparator import DataPreparator, Indexer
+from replay_main.splitters import TimeSplitter
+from replay_main.utils import PYSPARK_AVAILABLE
 
 if PYSPARK_AVAILABLE:
     from pyspark.sql import functions as sf

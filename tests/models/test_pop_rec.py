@@ -2,8 +2,8 @@ from datetime import datetime
 
 import pytest
 
-from replay.data import get_schema
-from replay.models import PopRec
+from replay_main.data import get_schema
+from replay_main.models import PopRec
 from tests.utils import create_dataset
 
 pyspark = pytest.importorskip("pyspark")

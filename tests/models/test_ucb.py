@@ -2,7 +2,7 @@ import logging
 
 import pytest
 
-from replay.models import KLUCB, UCB
+from replay_main.models import KLUCB, UCB
 from tests.utils import create_dataset, sparkDataFrameEqual, sparkDataFrameNotEqual
 
 pyspark = pytest.importorskip("pyspark")

@@ -16,10 +16,10 @@ import pyspark.sql.functions as sf
 from pyspark.sql import SparkSession
 from pyspark.sql.types import TimestampType
 
-import replay.utils.session_handler
-from replay.utils import spark_utils as utils
-from replay.utils.common import _check_if_dataframe
-from replay.utils.time import get_item_recency
+import replay_main.utils.session_handler
+from replay_main.utils import spark_utils as utils
+from replay_main.utils.common import _check_if_dataframe
+from replay_main.utils.time import get_item_recency
 
 datetime = partial(datetime, tzinfo=timezone.utc)
 
@@ -85,11 +85,11 @@ def test_process_timestamp(log_data, ground_truth_data, schema, spark):
 
 @pytest.mark.spark
 def test_get_spark_session():
-    spark = replay.utils.session_handler.get_spark_session(1)
+    spark = replay_main.utils.session_handler.get_spark_session(1)
     assert isinstance(spark, SparkSession)
     assert spark.conf.get("spark.driver.memory") == "1g"
-    assert replay.utils.session_handler.State(spark).session is spark
-    assert replay.utils.session_handler.State().session is spark
+    assert replay_main.utils.session_handler.State(spark).session is spark
+    assert replay_main.utils.session_handler.State().session is spark
 
 
 @pytest.mark.spark

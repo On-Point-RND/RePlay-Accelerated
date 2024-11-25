@@ -8,11 +8,11 @@ torch = pytest.importorskip("torch")
 
 from pyspark.sql import functions as sf
 
-from replay.data import get_schema
-from replay.experimental.models import NeuroMF
-from replay.experimental.models.base_rec import HybridRecommender, UserRecommender
-from replay.experimental.utils.model_handler import save
-from replay.utils.model_handler import load
+from replay_main.data import get_schema
+from replay_main.experimental.models import NeuroMF
+from replay_main.experimental.models.base_rec import HybridRecommender, UserRecommender
+from replay_main.experimental.utils.model_handler import save
+from replay_main.utils.model_handler import load
 from tests.utils import sparkDataFrameEqual
 
 SEED = 123

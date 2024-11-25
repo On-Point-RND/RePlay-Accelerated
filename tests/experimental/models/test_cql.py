@@ -9,9 +9,9 @@ torch = pytest.importorskip("torch")
 from d3rlpy.models.optimizers import AdamFactory
 from pyspark.sql import functions as sf
 
-from replay.experimental.models.base_rec import HybridRecommender, UserRecommender
-from replay.experimental.models.cql import CQL, MdpDatasetBuilder
-from replay.utils import SparkDataFrame
+from replay_main.experimental.models.base_rec import HybridRecommender, UserRecommender
+from replay_main.experimental.models.cql import CQL, MdpDatasetBuilder
+from replay_main.utils import SparkDataFrame
 from tests.utils import sparkDataFrameEqual
 
 

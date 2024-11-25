@@ -4,8 +4,8 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from replay.splitters import RatioSplitter
-from replay.utils import PYSPARK_AVAILABLE
+from replay_main.splitters import RatioSplitter
+from replay_main.utils import PYSPARK_AVAILABLE
 
 if PYSPARK_AVAILABLE:
     import pyspark.sql.functions as F

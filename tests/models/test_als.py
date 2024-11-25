@@ -1,14 +1,14 @@
 import numpy as np
 import pytest
 
-from replay.models import ALSWrap, AssociationRulesItemRec
-from replay.utils import PYSPARK_AVAILABLE
+from replay_main.models import ALSWrap, AssociationRulesItemRec
+from replay_main.utils import PYSPARK_AVAILABLE
 from tests.utils import create_dataset
 
 if PYSPARK_AVAILABLE:
     from pyspark.sql import functions as sf
 
-    from replay.utils.spark_utils import array_mult, horizontal_explode, join_or_return
+    from replay_main.utils.spark_utils import array_mult, horizontal_explode, join_or_return
 
 SEED = 123
 

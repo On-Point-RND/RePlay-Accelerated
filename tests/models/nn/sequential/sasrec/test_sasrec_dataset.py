@@ -1,9 +1,9 @@
 import pytest
 
-from replay.utils import TORCH_AVAILABLE
+from replay_main.utils import TORCH_AVAILABLE
 
 if TORCH_AVAILABLE:
-    from replay.models.nn.sequential.sasrec import (
+    from replay_main.models.nn.sequential.sasrec import (
         SasRecPredictionDataset,
         SasRecTrainingDataset,
         SasRecValidationDataset,

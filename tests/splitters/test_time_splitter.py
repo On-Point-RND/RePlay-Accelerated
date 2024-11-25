@@ -6,8 +6,8 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from replay.splitters import TimeSplitter
-from replay.utils import PYSPARK_AVAILABLE, PandasDataFrame
+from replay_main.splitters import TimeSplitter
+from replay_main.utils import PYSPARK_AVAILABLE, PandasDataFrame
 
 if PYSPARK_AVAILABLE:
     import pyspark.sql.functions as F

@@ -1,8 +1,8 @@
 import pytest
 
-from replay.data import Dataset, FeatureHint, FeatureInfo, FeatureSchema, FeatureType
-from replay.data.dataset_utils import DatasetLabelEncoder
-from replay.preprocessing import LabelEncoder
+from replay_main.data import Dataset, FeatureHint, FeatureInfo, FeatureSchema, FeatureType
+from replay_main.data.dataset_utils import DatasetLabelEncoder
+from replay_main.preprocessing import LabelEncoder
 
 
 def get_features(data_dict):

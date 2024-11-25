@@ -6,8 +6,8 @@ torch = pytest.importorskip("torch")
 
 from pyspark.sql import functions as sf
 
-from replay.data import get_schema
-from replay.experimental.models import ImplicitWrap
+from replay_main.data import get_schema
+from replay_main.experimental.models import ImplicitWrap
 from tests.utils import sparkDataFrameEqual
 
 INTERACTIONS_SCHEMA = get_schema("user_idx", "item_idx", "timestamp", "relevance")

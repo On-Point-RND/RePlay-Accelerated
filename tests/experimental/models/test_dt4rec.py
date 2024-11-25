@@ -7,15 +7,15 @@ import pytest
 pyspark = pytest.importorskip("pyspark")
 torch = pytest.importorskip("torch")
 
-from replay.experimental.models.dt4rec.dt4rec import DT4Rec
-from replay.experimental.models.dt4rec.gpt1 import GPT, Block, CausalSelfAttention
-from replay.experimental.models.dt4rec.utils import (
+from replay_main.experimental.models.dt4rec.dt4rec import DT4Rec
+from replay_main.experimental.models.dt4rec.gpt1 import GPT, Block, CausalSelfAttention
+from replay_main.experimental.models.dt4rec.utils import (
     ValidateDataset,
     create_dataset as create_dt4rec_dataset,
     fast_create_dataset,
     matrix2df,
 )
-from replay.experimental.preprocessing.data_preparator import DataPreparator, Indexer
+from replay_main.experimental.preprocessing.data_preparator import DataPreparator, Indexer
 
 
 @dataclass

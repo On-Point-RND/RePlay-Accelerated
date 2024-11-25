@@ -3,7 +3,7 @@ import logging
 import numpy as np
 import pytest
 
-from replay.models import (
+from replay_main.models import (
     KLUCB,
     SLIM,
     UCB,

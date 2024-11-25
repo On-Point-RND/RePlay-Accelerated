@@ -2,10 +2,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from replay.utils import TORCH_AVAILABLE
+from replay_main.utils import TORCH_AVAILABLE
 
 if TORCH_AVAILABLE:
-    from replay.models.nn.sequential.postprocessors import RemoveSeenItems, SampleItems
+    from replay_main.models.nn.sequential.postprocessors import RemoveSeenItems, SampleItems
 
 torch = pytest.importorskip("torch")
 
