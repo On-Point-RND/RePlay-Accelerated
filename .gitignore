@@ -192,3 +192,4 @@ d3rlpy_logs/
 replay_benchmarks/data
 replay/*
 replay_main/*
+data/*
