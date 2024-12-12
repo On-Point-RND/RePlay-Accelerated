@@ -45,8 +45,8 @@ def main() -> None:
                 # Вычисление n_buckets и bucket_size_x
 
                 try:
-                    n_buckets = int(batch_size * int(config['dataset']['interactions_per_user']) ** 0.5 / 2.)
-                    bucket_size_x = int((batch_size * int(config['dataset']['interactions_per_user'])) ** 0.5 / 2.)
+                    n_buckets = int((batch_size * int(config['dataset']['interactions_per_user'])) ** 0.5 * 2.)
+                    bucket_size_x = int((batch_size * int(config['dataset']['interactions_per_user'])) ** 0.5 * 2.)
 
                     # Обновление конфига модели
                     config["model"]["params"]["training_params"]["batch_size"] = batch_size
