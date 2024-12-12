@@ -1,6 +1,7 @@
 dataset:
   name: movielens_1m
   path: "./replay_benchmarks/data/movielens_1m"
+  interactions_per_user: 96
 
   feature_schema:
     query_column: "user_id"
