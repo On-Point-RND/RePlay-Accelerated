@@ -4,7 +4,7 @@ import os
 import logging
 import warnings
 import yaml
-# import argparse
+import argparse
 
 from replay_benchmarks.utils.conf import load_config, seed_everything
 from replay_benchmarks import TrainRunner, InferRunner

@@ -1,4 +1,3 @@
-import torch
 from replay.models.nn.sequential import SasRec, Bert4Rec
 from replay.utils import get_spark_session
 from .base_runner import BaseRunner
@@ -34,9 +33,6 @@ class InferRunner(BaseRunner):
 
         model = model.load_from_checkpoint(self.config["paths"]["checkpoint_dir"])
         model.eval()
-
-
-
 
         return model
 
