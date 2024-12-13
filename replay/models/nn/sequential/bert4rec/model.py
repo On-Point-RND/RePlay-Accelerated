@@ -44,6 +44,7 @@ class Bert4RecModel(torch.nn.Module):
             Default: ``True``.
         :param enable_embedding_tying: Use embedding tying head.
             Default: ``False``.
+        :param acceleration_config: Parameters for accelerated layers in the model. (eg. TransformerBlockFast)
         """
         super().__init__()
 
@@ -450,10 +451,14 @@ class ClassificationHead(BaseHead):
 
 class LinearHead(torch.nn.Module):
     """
-    :param hidden_size: Hidden size of transformer.
-    :param n_items: Number of items.
+    Linear layer for classification
     """
+
     def __init__(self, hidden_size: int, n_items: int) -> None:
+        """
+        :param hidden_size: Hidden size of transformer.
+        :param n_items: Number of items.
+        """
         super().__init__()
         self.linear = torch.nn.Linear(hidden_size, n_items, bias=True)
 
@@ -539,8 +544,7 @@ class TransformerBlock(torch.nn.Module):
 
 class TransformerBlockFast(torch.nn.Module):
     """
-    Bidirectional Encoder = Transformer (self-attention)
-    Transformer = MultiHead_Attention + Feed_Forward with sublayer connection
+    TransformerBlock with custom layers
     """
 
     def __init__(
@@ -556,6 +560,7 @@ class TransformerBlockFast(torch.nn.Module):
         :param attn_heads: Head sizes of multi-head attention.
         :param feed_forward_hidden: Feed_forward_hidden, usually 4*hidden_size.
         :param dropout: Dropout rate.
+        :acceleration_config: Parameters for acceleration.
         """
         super().__init__()
         self.attention = torch.nn.MultiheadAttention(hidden_size, attn_heads, dropout=dropout, batch_first=True)
@@ -655,7 +660,7 @@ class PositionwiseFeedForward(torch.nn.Module):
 
 class PositionwiseFeedForwardFast(torch.nn.Module):
     """
-    Implements FFN equation.
+    Implements FFN equation with different activation functions.
     """
 
     def __init__(self, d_model: int, d_ff: int, dropout: float = 0.1, acceleration_config: dict = None) -> None:
@@ -664,6 +669,7 @@ class PositionwiseFeedForwardFast(torch.nn.Module):
         :param d_ff: Feed forward dimension, usually 4*d_model.
         :param dropout: Dropout rate.
             Default: ``0.1``.
+        :acceleration_config: Parameters for acceleration.
         """
         super().__init__()
         self.w_1 = torch.nn.Linear(d_model, d_ff)

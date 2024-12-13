@@ -1,4 +1,5 @@
 import math
+import logging
 from typing import Any, Dict, Optional, Tuple, Union, cast
 
 import lightning
@@ -80,6 +81,8 @@ class Bert4Rec(lightning.LightningModule):
         :param optimizer_factory: Optimizer factory.
             Default: ``FatOptimizerFactory``.
         :param lr_scheduler_factory: Learning rate schedule factory.
+            Default: ``None``
+        :param acceleration_config: Parameters for acceleration.
             Default: ``None``.
         """
         super().__init__()
@@ -98,10 +101,14 @@ class Bert4Rec(lightning.LightningModule):
         )
         
         if acceleration_config:
-            if acceleration_config["precision"] == "bf16":
+            if acceleration_config["dtype"] == "fp32":
+                pass
+            elif acceleration_config["dtype"] == "bf16":
                 self._model = self._model.to(torch.bfloat16)
-            elif acceleration_config["precision"] == "fp16":
+            elif acceleration_config["dtype"] == "fp16":
                 self._model = self._model.to(torch.float16)
+            else:
+                raise ValueError(f"dtype in acceleration config is not supported")
 
         self._loss_type = loss_type
         self._loss_sample_count = loss_sample_count
