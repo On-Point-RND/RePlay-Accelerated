@@ -36,6 +36,8 @@ class Bert4Rec(lightning.LightningModule):
         bucket_size_x: int = 100,
         bucket_size_y: int = 100,
         mix_x: bool = False,
+        margin: float = 5.0,
+        scale: float = 1.0,
         optimizer_factory: OptimizerFactory = FatOptimizerFactory(),
         lr_scheduler_factory: Optional[LRSchedulerFactory] = None,
         acceleration_config: Optional[dict] = None
@@ -122,6 +124,8 @@ class Bert4Rec(lightning.LightningModule):
         self._bucket_size_x = bucket_size_x
         self._bucket_size_y = bucket_size_y
         self._mix_x = mix_x
+        self._margin = margin
+        self._scale = scale
         assert negative_sampling_strategy in {"global_uniform", "inbatch"}
 
         item_count = tensor_schema.item_id_features.item().cardinality
@@ -425,9 +429,7 @@ class Bert4Rec(lightning.LightningModule):
         feature_tensors: TensorMap,
         positive_labels: torch.LongTensor,
         padding_mask: torch.BoolTensor,
-        tokens_mask: torch.BoolTensor,
-        margin: torch.FloatType = 5.0,
-        scale: torch.FloatType = 1.0 
+        tokens_mask: torch.BoolTensor
     ) -> torch.Tensor:
 
         # X = [batch_size x max_length x hidden_size]
@@ -444,11 +446,11 @@ class Bert4Rec(lightning.LightningModule):
         # positive_theta = [batch_size x max_length]
         # positive_labels = [batch_size x max_length]
         positive_theta = theta[torch.arange(X.shape[0]).unsqueeze(-1), torch.arange(X.shape[1]), positive_labels]
-        adjusted_theta = positive_theta + margin
+        adjusted_theta = positive_theta + self._margin
         
         # logits = [batch_size x max_length x |I|]
-        logits = scale * torch.cos(theta)
-        logits[torch.arange(X.shape[0]).unsqueeze(-1), torch.arange(X.shape[1]), positive_labels] = scale * torch.cos(adjusted_theta)
+        logits = self._scale * torch.cos(theta)
+        logits[torch.arange(X.shape[0]).unsqueeze(-1), torch.arange(X.shape[1]), positive_labels] = self._scale * torch.cos(adjusted_theta)
 
         # logits = [(batch_size * max_length) x |I|]
         # positive_labels = [(batch_size * max_length)]

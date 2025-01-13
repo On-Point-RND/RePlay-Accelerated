@@ -11,6 +11,8 @@ model:
       dropout_rate: 0.15
       loss_type: ARCFACE # CE, BCE, SCE
       loss_sample_count: Null
+      margin: 5.0 #parameter for ARCFACE loss function
+      scale: 1.0 #parameter for ARCFACE loss function
     training_params:
       embedding_dim: 312
       learning_rate: 0.002
