@@ -1,6 +1,6 @@
 model:
   name: bert4rec
-  save_name: bert4rec_CE
+  save_name: bert4rec_ARCFACE
 
   params:
     model_params:
@@ -9,7 +9,7 @@ model:
       max_seq_len: 20
       hidden_size: 312
       dropout_rate: 0.15
-      loss_type: CE # CE, BCE, SCE
+      loss_type: ARCFACE # CE, BCE, SCE
       loss_sample_count: Null
     training_params:
       embedding_dim: 312

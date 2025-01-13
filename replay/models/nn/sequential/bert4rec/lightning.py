@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional, Tuple, Union, cast
 
 import lightning
 import torch
+import torch.nn.functional as F
 
 from replay.data.nn import TensorMap, TensorSchema
 from replay.models.nn.optimizer_utils import FatOptimizerFactory, LRSchedulerFactory, OptimizerFactory
@@ -240,6 +241,8 @@ class Bert4Rec(lightning.LightningModule):
             loss_func = self._compute_loss_ce if self._loss_sample_count is None else self._compute_loss_ce_sampled
         elif self._loss_type == "SCE":
             loss_func = self._compute_loss_scalable_ce
+        elif self._loss_type == "ARCFACE":
+            loss_func = self._compute_loss_arcface
         else:
             msg = f"Not supported loss type: {self._loss_type}"
             raise ValueError(msg)
@@ -416,6 +419,46 @@ class Bert4Rec(lightning.LightningModule):
         loss = torch.mean(loss)
 
         return loss
+    
+    def _compute_loss_arcface(
+        self,
+        feature_tensors: TensorMap,
+        positive_labels: torch.LongTensor,
+        padding_mask: torch.BoolTensor,
+        tokens_mask: torch.BoolTensor,
+        margin: torch.FloatType = 5.0,
+        scale: torch.FloatType = 1.0 
+    ) -> torch.Tensor:
+
+        # X = [batch_size x max_length x hidden_size]
+        X = self._model.forward_step(feature_tensors, padding_mask, tokens_mask)
+        X_normalized = F.normalize(X, dim=-1)
+
+        # W = [|I| x hidden_size]
+        W = self._model._head.get_item_embeddings()
+        W_normalized = F.normalize(W, dim=-1)
+
+        # theta = [batch_size x max_length x |I|]
+        theta = torch.arccos(torch.einsum('bnh,mh->bnm', X_normalized, W_normalized))
+
+        # positive_theta = [batch_size x max_length]
+        # positive_labels = [batch_size x max_length]
+        positive_theta = theta[torch.arange(X.shape[0]).unsqueeze(-1), torch.arange(X.shape[1]), positive_labels]
+        adjusted_theta = positive_theta + margin
+        
+        # logits = [batch_size x max_length x |I|]
+        logits = scale * torch.cos(theta)
+        logits[torch.arange(X.shape[0]).unsqueeze(-1), torch.arange(X.shape[1]), positive_labels] = scale * torch.cos(adjusted_theta)
+
+        # logits = [(batch_size * max_length) x |I|]
+        # positive_labels = [(batch_size * max_length)]
+        loss = F.cross_entropy(
+            logits.view(-1, logits.size(-1)),
+            positive_labels.view(-1),
+            reduction='mean'
+        )
+
+        return loss
 
     def _get_sampled_logits(
         self,
@@ -503,7 +546,7 @@ class Bert4Rec(lightning.LightningModule):
         if self._loss_type == "BCE":
             return torch.nn.BCEWithLogitsLoss(reduction="sum")
 
-        if self._loss_type == "CE" or self._loss_type == "SCE":
+        if self._loss_type == "CE" or self._loss_type == "SCE" or self._loss_type == "ARCFACE":
             return torch.nn.CrossEntropyLoss()
 
         msg = "Not supported loss_type"
