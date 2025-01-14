@@ -1,6 +1,6 @@
 defaults:
   - dataset: movielens_1m
-  - model: bert4rec
+  - model: sasrec
   - mode: train
   - acceleration: null
 

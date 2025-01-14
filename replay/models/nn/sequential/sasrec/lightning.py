@@ -215,6 +215,8 @@ class SasRec(lightning.LightningModule):
             loss_func = self._compute_loss_scalable_ce
         elif self._loss_type == "ARCFACE":
             loss_func = self._compute_loss_arcface
+        elif self._loss_type == "ALTCE":
+            loss_func = self._compute_alternative_cross_entropy
         else:
             msg = f"Not supported loss type: {self._loss_type}"
             raise ValueError(msg)
@@ -425,6 +427,36 @@ class SasRec(lightning.LightningModule):
 
         return loss
 
+    def _compute_alternative_cross_entropy(
+        self,
+        feature_tensors: TensorMap,
+        positive_labels: torch.LongTensor,
+        padding_mask: torch.BoolTensor,
+        target_padding_mask: torch.BoolTensor,
+    ) -> torch.Tensor:
+
+        # X = [batch_size x max_length x hidden_size]
+        X = self._model.forward_step(feature_tensors, padding_mask)
+
+        # W = [|I| x hidden_size]
+        W = self._model._head._item_embedder.get_all_item_weights()
+
+        # logits = [batch_size x max_length x |I|]
+        logits = torch.einsum('bnh,mh->bnm', X, W)
+
+        # Flatten the logits and labels for cross-entropy calculation
+        logits_flat = logits.view(-1, logits.size(-1))
+        positive_labels_flat = positive_labels.view(-1)
+
+        # Compute the cross-entropy loss
+        loss = F.cross_entropy(
+            logits_flat,
+            positive_labels_flat,
+            reduction='mean'
+        )
+
+        return loss
+
     def _get_sampled_logits(
         self,
         feature_tensors: TensorMap,
@@ -509,7 +541,7 @@ class SasRec(lightning.LightningModule):
         if self._loss_type == "BCE":
             return torch.nn.BCEWithLogitsLoss(reduction="sum")
 
-        if self._loss_type == "CE" or self._loss_type == "SCE" or self._loss_type == "ARCFACE":
+        if self._loss_type == "CE" or self._loss_type == "SCE" or self._loss_type == "ARCFACE" or self._loss_type == "ALTCE":
             return torch.nn.CrossEntropyLoss()
 
         msg = "Not supported loss_type"

@@ -1,6 +1,6 @@
 model:
   name: sasrec
-  save_name: sasrec_ARCFACE_10
+  save_name: sasrec_ARCFACE
 
   params:
     model_params:
@@ -9,22 +9,15 @@ model:
       max_seq_len: 100
       hidden_size: 384
       dropout_rate: 0.1
-      loss_type: ARCFACE # CE, BCE, SCE, ARCFACE
+      loss_type: ARCFACE # CE, BCE, SCE, ARCFACE, ALTCE
       loss_sample_count: 500
       margin: 5.0 #parameter for ARCFACE loss function
       scale: 1.0 #parameter for ARCFACE loss function
     training_params:
       embedding_dim: 300
       learning_rate: 0.001
-      batch_size: 16
+      batch_size: 64
       num_workers: 4
       patience: 10
       max_epochs: 20
       precision: null #default 32, bf16-mixed
-
-loss_function:
-  name: ARCFACE
-  
-  params:
-    scale: 1.0
-    margin: 1.0
