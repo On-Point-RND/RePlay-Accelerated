@@ -1,6 +1,6 @@
 model:
   name: sasrec
-  save_name: sasrec_ARCFACE
+  save_name: sasrec_CE
 
   params:
     model_params:
@@ -9,7 +9,7 @@ model:
       max_seq_len: 100
       hidden_size: 384
       dropout_rate: 0.1
-      loss_type: ARCFACE # CE, BCE, SCE, ARCFACE, ALTCE
+      loss_type: CE # CE, BCE, SCE, ARCFACE, ALTCE
       loss_sample_count: 500
       margin: 5.0 #parameter for ARCFACE loss function
       scale: 1.0 #parameter for ARCFACE loss function

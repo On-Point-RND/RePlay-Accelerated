@@ -214,7 +214,7 @@ class SasRec(lightning.LightningModule):
         elif self._loss_type == "SCE":
             loss_func = self._compute_loss_scalable_ce
         elif self._loss_type == "ARCFACE":
-            loss_func = self._compute_loss_arcface
+            loss_func = self._compute_loss_arcface if self._loss_sample_count is None else self._compute_loss_arcface_sampled
         elif self._loss_type == "ALTCE":
             loss_func = self._compute_alternative_cross_entropy
         else:
@@ -426,6 +426,35 @@ class SasRec(lightning.LightningModule):
         )
 
         return loss
+    
+    def _compute_loss_arcface_sampled(
+        self,
+        feature_tensors: TensorMap,
+        positive_labels: torch.LongTensor,
+        padding_mask: torch.BoolTensor,
+        target_padding_mask: torch.BoolTensor
+    ) -> torch.Tensor:
+        assert self._loss_sample_count is not None
+        (positive_logits, negative_logits, positive_labels, negative_labels, vocab_size) = self._get_sampled_logits_arcface(
+            feature_tensors, positive_labels, padding_mask, target_padding_mask
+        )
+        n_negative_samples = min(self._loss_sample_count, vocab_size)
+
+        # Reject negative samples matching target label & correct for remaining samples
+        reject_labels = positive_labels == negative_labels  # [masked_batch_seq_size x n_negative_samples]
+        negative_logits += math.log(vocab_size - 1)
+        negative_logits -= 1e6 * reject_labels
+        negative_logits -= torch.log((n_negative_samples - reject_labels.sum(dim=-1, keepdim=True)).float())
+
+        logits = torch.cat([positive_logits, negative_logits], dim=1).float() # [masked_batch_seq_size x (n_negative_samples+1)]
+        labels_flat = torch.zeros(positive_logits.size(0), dtype=torch.long, device=padding_mask.device) # [masked_batch_seq_size]
+
+        loss = F.cross_entropy(
+            logits,
+            labels_flat,
+            reduction='mean'
+        )
+        return loss
 
     def _compute_alternative_cross_entropy(
         self,
@@ -529,6 +558,108 @@ class SasRec(lightning.LightningModule):
             else:
                 # unique_negative_labels - 1d
                 negative_logits = self._model.get_logits(output_emb, negative_labels)
+        else:  # self._negative_sampling_strategy == "inbatch":
+            negative_labels_indices = negative_labels
+            negative_logits = positive_logits
+            negative_logits = negative_logits[ids, negative_labels_indices.T].T
+            positive_logits = positive_logits[ids, positive_labels_indices.T].T
+
+        return (positive_logits, negative_logits, positive_labels, negative_labels, vocab_size)
+    
+    def _get_sampled_logits_arcface(
+        self,
+        feature_tensors: TensorMap,
+        positive_labels: torch.LongTensor,
+        padding_mask: torch.BoolTensor,
+        target_padding_mask: torch.BoolTensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.LongTensor, torch.LongTensor, int]:
+        '''
+        Function for sampling items for arcface loss function
+        '''
+        assert self._loss_sample_count is not None
+        assert self._negative_sampling_strategy == "global_uniform", "Method doesn't support not global_uniform strategy yet"
+        assert ~self._negatives_sharing, "Method doesn't support negatives_sharing=True strategy"
+
+        n_negative_samples = self._loss_sample_count
+        positive_labels = cast(
+            torch.LongTensor, torch.masked_select(positive_labels, target_padding_mask)
+        )  # (masked_batch_seq_size,)
+        masked_batch_seq_size = positive_labels.size(0)
+        device = padding_mask.device
+        output_emb = self._model.forward_step(feature_tensors, padding_mask)[target_padding_mask] #[(batch_size*maxlen) x hidden_size]
+        output_emb = F.normalize(output_emb, dim=-1)
+
+        positive_labels = cast(torch.LongTensor, positive_labels.view(-1, 1))
+        ids = torch.arange(masked_batch_seq_size, dtype=torch.long, device=device)
+        unique_positive_labels, positive_labels_indices = positive_labels.unique(return_inverse=True)
+
+        if self._negative_sampling_strategy == "global_uniform":
+            vocab_size = self._vocab_size
+            multinomial_sample_distribution = torch.ones(vocab_size, device=device)
+            # positive_labels - 2d
+            positive_weights = self._model._head._item_embedder.get_item_weights(positive_labels) #[(batch_size*maxlen) x 1 x hidden_size] 
+            positive_weights = F.normalize(positive_weights, dim=-1)
+
+            positive_theta = torch.arccos(torch.einsum('xu,xyu->xy', output_emb, positive_weights)) + self._margin #[(batch_size*maxlen) x 1]
+            positive_logits = self._scale * torch.cos(positive_theta)
+
+        elif self._negative_sampling_strategy == "inbatch":
+            positive_labels_indices = positive_labels_indices.view(masked_batch_seq_size, 1)
+            # unique_positive_labels - 1d
+            positive_weights = self._model._head._item_embedder.get_item_weights(unique_positive_labels)
+            positive_weights = F.normalize(positive_weights, dim=-1)
+
+            positive_theta = torch.arccos(torch.einsum('xu,xyu->xy', output_emb, positive_weights)) + self._margin
+            positive_logits = self._scale * torch.cos(positive_theta)
+
+            vocab_size = unique_positive_labels.size(0)
+            if self._negatives_sharing:
+                multinomial_sample_distribution = torch.ones(vocab_size, device=device)
+            else:
+                multinomial_sample_distribution = torch.softmax(positive_logits, dim=-1)
+        else:
+            msg = f"Unknown negative sampling strategy: {self._negative_sampling_strategy}"
+            raise NotImplementedError(msg)
+        n_negative_samples = min(n_negative_samples, vocab_size)
+
+        if self._negatives_sharing:
+            negative_labels = torch.multinomial(
+                multinomial_sample_distribution,
+                num_samples=n_negative_samples,
+                replacement=False,
+            )
+            negative_labels = negative_labels.unsqueeze(0).repeat(masked_batch_seq_size, 1)
+        elif self._negative_sampling_strategy == "global_uniform":
+            negative_labels = torch.randint(
+                low=0,
+                high=vocab_size,
+                size=(masked_batch_seq_size, n_negative_samples),
+                dtype=torch.long,
+                device=device,
+            )
+        else:
+            negative_labels = torch.multinomial(
+                multinomial_sample_distribution,
+                num_samples=n_negative_samples,
+                replacement=False,
+            )
+        negative_labels = cast(torch.LongTensor, negative_labels)
+
+        if self._negative_sampling_strategy == "global_uniform":
+            if self._negatives_sharing:
+                unique_negative_labels, negative_labels_indices = negative_labels.unique(return_inverse=True)
+                negative_labels_indices = negative_labels_indices.view(masked_batch_seq_size, n_negative_samples)
+                # unique_negative_labels - 1d
+                negative_logits = self._model.get_logits(output_emb, unique_negative_labels)
+                negative_logits = negative_logits[ids, negative_labels_indices.T].T
+            else:
+                # unique_negative_labels - 1d
+                negative_weights = self._model._head._item_embedder.get_item_weights(negative_labels)
+                negative_weights = F.normalize(negative_weights, dim=-1)
+
+                negative_theta = torch.arccos(torch.einsum('xu,xyu->xy', output_emb, negative_weights)) # [(batch_size*maxlen) x loss_sample_count]
+                negative_logits = self._scale * torch.cos(negative_theta)
+
         else:  # self._negative_sampling_strategy == "inbatch":
             negative_labels_indices = negative_labels
             negative_logits = positive_logits

@@ -1,5 +1,5 @@
 defaults:
-  - dataset: movielens_1m
+  - dataset: zvuk
   - model: sasrec
   - mode: train
   - acceleration: null
