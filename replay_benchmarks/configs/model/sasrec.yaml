@@ -1,23 +1,23 @@
 model:
   name: sasrec
-  save_name: sasrec_CE
+  save_name: sasrec_ARCFACE
 
   params:
     model_params:
-      block_count: 4
+      block_count: 2
       head_count: 2
       max_seq_len: 100
-      hidden_size: 384
-      dropout_rate: 0.1
-      loss_type: CE # CE, BCE, SCE, ARCFACE, ALTCE
+      hidden_size: 256
+      dropout_rate: 0.15
+      loss_type: ARCFACE # CE, BCE, SCE, ARCFACE, ALTCE
       loss_sample_count: 500
       margin: 5.0 #parameter for ARCFACE loss function
       scale: 1.0 #parameter for ARCFACE loss function
     training_params:
-      embedding_dim: 300
+      embedding_dim: 256
       learning_rate: 0.001
-      batch_size: 64
+      batch_size: 32
       num_workers: 4
       patience: 10
-      max_epochs: 20
+      max_epochs: 10
       precision: null #default 32, bf16-mixed

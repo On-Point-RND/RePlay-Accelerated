@@ -1,6 +1,6 @@
 defaults:
-  - dataset: zvuk
-  - model: sasrec
+  - dataset: megamarket
+  - model: bert4rec
   - mode: train
   - acceleration: null
 

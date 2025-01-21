@@ -246,7 +246,7 @@ class Bert4Rec(lightning.LightningModule):
         elif self._loss_type == "SCE":
             loss_func = self._compute_loss_scalable_ce
         elif self._loss_type == "ARCFACE":
-            loss_func = self._compute_loss_arcface
+            loss_func = self._compute_loss_arcface if self._loss_sample_count is None else self._compute_loss_arcface_sampled
         else:
             msg = f"Not supported loss type: {self._loss_type}"
             raise ValueError(msg)
@@ -461,6 +461,35 @@ class Bert4Rec(lightning.LightningModule):
         )
 
         return loss
+    
+    def _compute_loss_arcface_sampled(
+        self,
+        feature_tensors: TensorMap,
+        positive_labels: torch.LongTensor,
+        padding_mask: torch.BoolTensor,
+        target_padding_mask: torch.BoolTensor
+    ) -> torch.Tensor:
+        assert self._loss_sample_count is not None
+        (positive_logits, negative_logits, positive_labels, negative_labels, vocab_size) = self._get_sampled_logits_arcface(
+            feature_tensors, positive_labels, padding_mask, target_padding_mask
+        )
+        n_negative_samples = min(self._loss_sample_count, vocab_size)
+
+        # Reject negative samples matching target label & correct for remaining samples
+        reject_labels = positive_labels == negative_labels  # [masked_batch_seq_size x n_negative_samples]
+        negative_logits += math.log(vocab_size - 1)
+        negative_logits -= 1e6 * reject_labels
+        negative_logits -= torch.log((n_negative_samples - reject_labels.sum(dim=-1, keepdim=True)).float())
+
+        logits = torch.cat([positive_logits, negative_logits], dim=1).float() # [masked_batch_seq_size x (n_negative_samples+1)]
+        labels_flat = torch.zeros(positive_logits.size(0), dtype=torch.long, device=padding_mask.device) # [masked_batch_seq_size]
+
+        loss = F.cross_entropy(
+            logits,
+            labels_flat,
+            reduction='mean'
+        )
+        return loss
 
     def _get_sampled_logits(
         self,
@@ -543,6 +572,70 @@ class Bert4Rec(lightning.LightningModule):
             cast(torch.LongTensor, negative_labels),
             vocab_size,
         )
+    
+    def _get_sampled_logits_arcface(
+        self,
+        feature_tensors: TensorMap,
+        positive_labels: torch.LongTensor,
+        padding_mask: torch.BoolTensor,
+        tokens_mask: torch.BoolTensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.LongTensor, torch.LongTensor, int]:
+        '''
+        Function for sampling items for arcface loss function
+        '''
+        assert self._loss_sample_count is not None
+        assert self._negative_sampling_strategy == "global_uniform", "Method doesn't support not global_uniform strategy yet"
+        assert not self._negatives_sharing, "Method doesn't support 'negatives_sharing=True' strategy yet"
+        n_negative_samples = self._loss_sample_count
+
+        labels_mask = (~padding_mask) + tokens_mask
+        masked_tokens = ~labels_mask
+
+        positive_labels = cast(
+            torch.LongTensor, torch.masked_select(positive_labels, masked_tokens)
+        )  # (masked_batch_seq_size,)
+        masked_batch_seq_size = positive_labels.size(0)
+        device = padding_mask.device
+
+        output_emb = self._model.forward_step(feature_tensors, padding_mask, tokens_mask)[masked_tokens] #[(batch_size*maxlen) x hidden_size]
+        output_emb = F.normalize(output_emb, dim=-1)
+
+        positive_labels = cast(torch.LongTensor, positive_labels.view(-1, 1))
+
+        if self._negative_sampling_strategy == "global_uniform":
+            vocab_size = self._vocab_size
+            # positive_labels - 2d
+            positive_weights = self._model._head.get_item_embeddings()[positive_labels] #[(batch_size*maxlen) x 1 x hidden_size] 
+            positive_weights = F.normalize(positive_weights, dim=-1)
+
+            positive_theta = torch.arccos(torch.einsum('xu,xyu->xy', output_emb, positive_weights)) + self._margin #[(batch_size*maxlen) x 1]
+            positive_logits = self._scale * torch.cos(positive_theta)
+        else:
+            msg = f"Unknown negative sampling strategy: {self._negative_sampling_strategy}"
+            raise NotImplementedError(msg)
+        n_negative_samples = min(n_negative_samples, vocab_size)
+
+        if self._negative_sampling_strategy == "global_uniform":
+            negative_labels = torch.randint(
+                low=0,
+                high=vocab_size,
+                size=(masked_batch_seq_size, n_negative_samples),
+                dtype=torch.long,
+                device=device,
+            )
+        else:
+            msg = f"Unknown negative sampling strategy: {self._negative_sampling_strategy}"
+            raise NotImplementedError(msg)
+        negative_labels = cast(torch.LongTensor, negative_labels)
+
+        if self._negative_sampling_strategy == "global_uniform":
+            negative_weights = self._model._head.get_item_embeddings()[negative_labels]
+            negative_weights = F.normalize(negative_weights, dim=-1)
+
+            negative_theta = torch.arccos(torch.einsum('xu,xyu->xy', output_emb, negative_weights)) # [(batch_size*maxlen) x loss_sample_count]
+            negative_logits = self._scale * torch.cos(negative_theta)
+
+        return (positive_logits, negative_logits, positive_labels, negative_labels, vocab_size)
 
     def _create_loss(self) -> Union[torch.nn.BCEWithLogitsLoss, torch.nn.CrossEntropyLoss]:
         if self._loss_type == "BCE":
