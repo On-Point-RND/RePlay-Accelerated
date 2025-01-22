@@ -531,23 +531,32 @@ class _switchback_vectorrize(torch.autograd.Function):
     def backward(ctx, grad_output_3D):
         input, weight, bias = ctx.save_for_backward
         grad_output = grad_output_3D.reshape(-1, grad_output_3D.size(-1))
-        breakpoint()
         grad_input = grad_weight = grad_bias = None
-        
+        breakpoint()
+
         if ctx.needs_input_grad[0]:
+            # grad_input = torch.matmul(
+            #     grad_output,
+            #     weight.to(grad_output.dtype)
+            # ).view(*grad_output_3D.size()[:-1], -1)
             grad_input = torch.matmul(
-                grad_output,
-                weight.to(grad_output.dtype)
+                grad_output.to(weight.dtype),
+                weight
             ).view(*grad_output_3D.size()[:-1], -1)
         
         if ctx.needs_input_grad[1]:
+            # grad_weight = torch.matmul(
+            #     grad_output.t(),
+            #     input.to(grad_output.dtype)
+            # )
             grad_weight = torch.matmul(
-                grad_output.t(),
-                input.to(grad_output.dtype)
+                grad_output.t().to(input.dtype),
+                input
             )
         
         if bias is not None and ctx.needs_input_grad[2]:
-            grad_bias = grad_output.sum(0)
+            # grad_bias = grad_output.to(bias.dtype).sum(0)
+            grad_bias = grad_output.to(bias.dtype).sum(0)
         
         return grad_input, grad_weight, grad_bias
        
