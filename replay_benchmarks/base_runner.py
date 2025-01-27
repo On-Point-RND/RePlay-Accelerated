@@ -110,7 +110,6 @@ class BaseRunner(ABC):
     ) -> Tuple[Dataset, Dataset, Dataset, Dataset, Dataset]:
         """Prepare Dataset objects for training, validation, and testing."""
         logging.info("Preparing Dataset objects...")
-
         train_dataset = Dataset(
             feature_schema=self.prepare_feature_schema(is_ground_truth=False),
             interactions=train_events,
