@@ -4,6 +4,12 @@ import yaml
 from pathlib import Path
 
 import torch
+import matplotlib.pyplot as plt
+import numpy as np
+import scipy.stats as st
+import pandas as pd
+from replay_benchmarks.utils.conf import seed_everything
+
 import lightning as L
 from lightning.pytorch.loggers import CSVLogger, TensorBoardLogger
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
@@ -223,95 +229,184 @@ class TrainRunner(BaseRunner):
             self._load_dataloaders()
         )
 
-        logging.info("Initializing model...")
-        model = self._initialize_model()
-
-        checkpoint_callback = ModelCheckpoint(
-            dirpath=os.path.join(
-                self.config["paths"]["checkpoint_dir"],
-                f"{self.model_save_name}_{self.dataset_name}",
-            ),
-            save_top_k=1,
-            verbose=True,
-            monitor="ndcg@10",
-            mode="max",
-        )
-
-        early_stopping = EarlyStopping(
-            monitor="ndcg@10",
-            patience=self.model_cfg["training_params"]["patience"],
-            mode="max",
-            verbose=True,
-        )
-
-        validation_metrics_callback = ValidationMetricsCallback(
-            metrics=self.config["metrics"]["types"],
-            ks=self.config["metrics"]["ks"],
-            item_count=self.item_count,
-            postprocessors=[RemoveSeenItems(self.seq_val_dataset)],
-        )
-
-        profiler = SimpleProfiler(dirpath = self.csv_logger.log_dir, filename = 'simple_profiler')
-
-        trainer = L.Trainer(
-            max_epochs=self.model_cfg["training_params"]["max_epochs"],
-            callbacks=[checkpoint_callback, early_stopping, validation_metrics_callback],
-            logger=[self.csv_logger, self.tb_logger],
-            profiler=profiler,
-            precision=self.model_cfg["training_params"]["precision"]
-        )
-
-        logging.info("Starting training...")
-        if self.config["mode"]["profiler"]["enabled"]:
-            with profile(
-                activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
-                record_shapes=True,
-                with_flops=True,
-                profile_memory=True,
-            ) as prof:
-                trainer.fit(model, train_dataloader, val_dataloader)
-            logging.info(
-                prof.key_averages().table(
-                    sort_by="self_cuda_time_total",
-                    row_limit=self.config["mode"]["profiler"].get("row_limit", 10),
-                )
-            )
-            prof.export_chrome_trace(
-                os.path.join(
-                    self.config["paths"]["log_dir"],
-                    f"{self.model_save_name}_{self.dataset_name}_profile.json",
-                )
-            )
+        loss_sample_count_list = self.model_cfg["model_params"]["loss_sample_count"]
+        if(not isinstance(loss_sample_count_list, list)):
+            is_need_figure = False
+            loss_sample_count_list = [loss_sample_count_list]
         else:
-            trainer.fit(model, train_dataloader, val_dataloader)
-        if self.model_name.lower() == "sasrec":
-            best_model = SasRec.load_from_checkpoint(checkpoint_callback.best_model_path)
-        elif self.model_name.lower() == "bert4rec":
-            best_model = Bert4Rec.load_from_checkpoint(checkpoint_callback.best_model_path)
-        self.save_model(trainer, best_model)
+            is_need_figure = True
+        
+        if(self.config["dataset"]["name"]=="movielens_1m"):
+            is_small_dataset = True
+            loss_sample_count_list.append(None)
+        else:
+            is_small_dataset = False
+        all_metrics = np.zeros(shape=(len(loss_sample_count_list),self.config["model"]["params"]["training_params"]["number_launches"]))
+        all_metrics = pd.DataFrame(all_metrics, index=loss_sample_count_list)
+        
+        metrics_for_plot_list = []
+        lower_bound_metrics_plot_list = []
+        upper_bound_metrics_plot_list = []
+        for sample_count_i, loss_sample_count in enumerate(loss_sample_count_list):
 
-        logging.info("Evaluating on test set...")
-        pandas_prediction_callback = PandasPredictionCallback(
-            top_k=max(self.config["metrics"]["ks"]),
-            query_column="user_id",
-            item_column="item_id",
-            rating_column="score",
-            postprocessors=[RemoveSeenItems(self.seq_test_dataset)],
-        )
-        L.Trainer(callbacks=[pandas_prediction_callback], inference_mode=True).predict(
-            best_model, dataloaders=prediction_dataloader, return_predictions=False
-        )
+            self.model_cfg["model_params"]["loss_sample_count"] = loss_sample_count
+            logging.info(f'loss_sample_count = {loss_sample_count}')
+            launch_metrics = []
+            for launch_number in range(self.config["model"]["params"]["training_params"]["number_launches"]):
+                new_seed = self.config["env"]["SEED"] + launch_number
+                seed_everything(new_seed)
+                logging.info(f"Global seed: {new_seed}")
+                logging.info("Initializing model...")
+                model = self._initialize_model()
 
-        result = pandas_prediction_callback.get_result()
-        recommendations = self.tokenizer.query_and_item_id_encoder.inverse_transform(
-            result
-        )
-        test_metrics = self.calculate_metrics(recommendations, self.raw_test_gt)
-        logging.info(test_metrics)
-        test_metrics.to_csv(
+                checkpoint_callback = ModelCheckpoint(
+                    dirpath=os.path.join(
+                        self.config["paths"]["checkpoint_dir"],
+                        f"{self.model_save_name}_{self.dataset_name}",
+                    ),
+                    save_top_k=1,
+                    verbose=True,
+                    monitor="ndcg@10",
+                    mode="max",
+                )
+
+                early_stopping = EarlyStopping(
+                    monitor="ndcg@10",
+                    patience=self.model_cfg["training_params"]["patience"],
+                    mode="max",
+                    verbose=True,
+                )
+
+                validation_metrics_callback = ValidationMetricsCallback(
+                    metrics=self.config["metrics"]["types"],
+                    ks=self.config["metrics"]["ks"],
+                    item_count=self.item_count,
+                    postprocessors=[RemoveSeenItems(self.seq_val_dataset)],
+                )
+
+                profiler = SimpleProfiler(dirpath = self.csv_logger.log_dir, filename = 'simple_profiler')
+
+                trainer = L.Trainer(
+                    max_epochs=self.model_cfg["training_params"]["max_epochs"],
+                    callbacks=[checkpoint_callback, early_stopping, validation_metrics_callback],
+                    logger=[self.csv_logger, self.tb_logger],
+                    profiler=profiler,
+                    precision=self.model_cfg["training_params"]["precision"]
+                )
+
+                logging.info("Starting training...")
+                if self.config["mode"]["profiler"]["enabled"]:
+                    with profile(
+                        activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+                        record_shapes=True,
+                        with_flops=True,
+                        profile_memory=True,
+                    ) as prof:
+                        trainer.fit(model, train_dataloader, val_dataloader)
+                    logging.info(
+                        prof.key_averages().table(
+                            sort_by="self_cuda_time_total",
+                            row_limit=self.config["mode"]["profiler"].get("row_limit", 10),
+                        )
+                    )
+                    prof.export_chrome_trace(
+                        os.path.join(
+                            self.config["paths"]["log_dir"],
+                            f"{self.model_save_name}_{self.dataset_name}_profile.json",
+                        )
+                    )
+                else:
+                    trainer.fit(model, train_dataloader, val_dataloader)
+                if self.model_name.lower() == "sasrec":
+                    best_model = SasRec.load_from_checkpoint(checkpoint_callback.best_model_path)
+                elif self.model_name.lower() == "bert4rec":
+                    best_model = Bert4Rec.load_from_checkpoint(checkpoint_callback.best_model_path)
+                self.save_model(trainer, best_model)
+
+                logging.info("Evaluating on test set...")
+                pandas_prediction_callback = PandasPredictionCallback(
+                    top_k=max(self.config["metrics"]["ks"]),
+                    query_column="user_id",
+                    item_column="item_id",
+                    rating_column="score",
+                    postprocessors=[RemoveSeenItems(self.seq_test_dataset)],
+                )
+                L.Trainer(callbacks=[pandas_prediction_callback], inference_mode=True).predict(
+                    best_model, dataloaders=prediction_dataloader, return_predictions=False
+                )
+
+                result = pandas_prediction_callback.get_result()
+                recommendations = self.tokenizer.query_and_item_id_encoder.inverse_transform(
+                    result
+                )
+                test_metrics = self.calculate_metrics(recommendations, self.raw_test_gt)
+                logging.info(test_metrics)
+                test_metrics.to_csv(
+                    os.path.join(
+                        self.config["paths"]["results_dir"],
+                        f"{self.model_save_name}_{self.dataset_name}_test_metrics.csv",
+                    ),
+                )
+                
+                launch_metrics.append(test_metrics['10']['NDCG'])
+                all_metrics[launch_number][loss_sample_count] = test_metrics['10']['NDCG']
+                all_metrics.to_csv(
+                    os.path.join(
+                        self.config["paths"]["log_dir"],
+                        f"{self.model_save_name}_{self.dataset_name}_all_launches_metrics.csv",
+                    ),
+                )
+
+            mean_metric = np.mean(all_metrics.iloc[sample_count_i].values)
+            std_metric = np.std(all_metrics.iloc[sample_count_i].values)
+            n = self.config["model"]["params"]["training_params"]["number_launches"]
+            if(n>1):
+                confidence = 0.95
+                t_value = st.t.ppf((1 + confidence) / 2, df=n-1)
+                margin_of_error = t_value * (std_metric / np.sqrt(n))
+                lower_bound = mean_metric - margin_of_error
+                upper_bound = mean_metric + margin_of_error
+            else:
+                lower_bound, upper_bound = mean_metric, mean_metric
+
+            metrics_for_plot_list.append(mean_metric)
+            lower_bound_metrics_plot_list.append(lower_bound)
+            upper_bound_metrics_plot_list.append(upper_bound)
+
+            
+        
+        all_metrics = pd.DataFrame(all_metrics, index=loss_sample_count_list)
+        logging.info(all_metrics)
+        all_metrics.to_csv(
             os.path.join(
-                self.config["paths"]["results_dir"],
-                f"{self.model_save_name}_{self.dataset_name}_test_metrics.csv",
+                self.config["paths"]["log_dir"],
+                f"{self.model_save_name}_{self.dataset_name}_all_launches_metrics.csv",
             ),
         )
+        
+        if(is_need_figure):
+            if(is_small_dataset):
+                metric_full = metrics_for_plot_list[-1]
+                loss_sample_count_list = loss_sample_count_list[:-1]
+                metrics_for_plot_list = metrics_for_plot_list[:-1]
+                upper_bound_metrics_plot_list = upper_bound_metrics_plot_list[:-1]
+                lower_bound_metrics_plot_list = lower_bound_metrics_plot_list[:-1]
+                plt.plot([loss_sample_count_list[0], loss_sample_count_list[-1]], [metric_full, metric_full], 'r--', label=f'{self.model_cfg["model_params"]["loss_type"]}_all_negative')
 
+            plt.plot(loss_sample_count_list, metrics_for_plot_list, 'o-', label=f'{self.model_cfg["model_params"]["loss_type"]}_metrics')
+            plt.fill_between(loss_sample_count_list, lower_bound_metrics_plot_list, upper_bound_metrics_plot_list, color='b', alpha=0.2, label="95% CI")
+            plt.xscale('log')
+            for xi, yi in zip(loss_sample_count_list, metrics_for_plot_list):
+                plt.text(xi, min(metrics_for_plot_list), f"{xi:.1f}", fontsize=10, ha='right')
+                plt.plot([xi, xi],[yi, min(metrics_for_plot_list)], 'b--', alpha=0.25)
+                
+            plt.legend()
+            plt.title(f'Metrics with {self.model_cfg["model_params"]["loss_type"]}')
+            plt.xlabel('Number samples')
+            plt.ylabel('NDCG@10 metric')
+            plt.grid('on')   
+            path_for_save = os.path.join(
+                self.config["paths"]["results_dir"],
+                f"{self.model_save_name}_{self.dataset_name}_metrics_convergence.png",
+                )
+            plt.savefig(path_for_save)
