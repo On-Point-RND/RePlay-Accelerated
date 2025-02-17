@@ -208,6 +208,8 @@ class SasRec(lightning.LightningModule):
             loss_func = self._compute_loss_ce if self._loss_sample_count is None else self._compute_loss_ce_sampled
         elif self._loss_type == "SCE":
             loss_func = self._compute_loss_scalable_ce
+        elif self._loss_type == "CE_restricted":
+            loss_func = self._compute_loss_ce_restricted
         else:
             msg = f"Not supported loss type: {self._loss_type}"
             raise ValueError(msg)
@@ -284,18 +286,13 @@ class SasRec(lightning.LightningModule):
         padding_mask: torch.BoolTensor,
         target_padding_mask: torch.BoolTensor,
     ) -> torch.Tensor:
-        # logits: [B x L x V]
-        logits = self._model.forward(
-            feature_tensors,
-            padding_mask,
-        )
-
+        # [B x L x V]
+        logits = self._model.forward(feature_tensors, padding_mask)
         # labels: [B x L]
         labels = positive_labels.masked_fill(mask=(~target_padding_mask), value=-100)
 
         logits_flat = logits.view(-1, logits.size(-1))  # [(B * L) x V]
         labels_flat = labels.view(-1)  # [(B * L)]
-
         loss = self._loss(logits_flat, labels_flat)
         return loss
 
@@ -380,6 +377,23 @@ class SasRec(lightning.LightningModule):
 
         return loss
 
+    def _compute_loss_ce_restricted(
+        self,
+        feature_tensors: TensorMap,
+        positive_labels: torch.LongTensor,
+        padding_mask: torch.BoolTensor,
+        target_padding_mask: torch.BoolTensor,
+    ) -> torch.Tensor:
+        
+        (logits, labels) = self._get_restricted_logits_for_ce_loss(
+                feature_tensors, positive_labels, padding_mask, target_padding_mask
+            )
+        logits_flat = logits.view(-1, logits.size(-1))  # [(B * L) x V]
+        labels_flat = labels.view(-1)  # [(B * L)]
+        loss = self._loss(logits_flat, labels_flat)
+
+        return loss
+
     def _get_sampled_logits(
         self,
         feature_tensors: TensorMap,
@@ -460,11 +474,41 @@ class SasRec(lightning.LightningModule):
 
         return (positive_logits, negative_logits, positive_labels, negative_labels, vocab_size)
 
+    def _get_restricted_logits_for_ce_loss(
+        self,
+        feature_tensors: TensorMap,
+        positive_labels: torch.LongTensor,
+        padding_mask: torch.BoolTensor,
+        target_padding_mask: torch.BoolTensor,
+        restrict_items: bool = True
+    ):
+        positive_labels = cast(
+            torch.LongTensor, torch.masked_select(positive_labels, padding_mask)
+        )  # (masked_batch_seq_size,)
+        # positive_labels = cast(torch.LongTensor, positive_labels.view(-1, 1))
+
+        output_emb = self._model.forward_step(feature_tensors, padding_mask)
+        output_emb = output_emb[padding_mask]
+        
+        if restrict_items:
+            unique_positive_labels, positive_labels_indices = \
+                positive_labels.unique(return_inverse=True)
+            logits = self._model.get_logits_for_restricted_loss(
+                output_emb, 
+                unique_positive_labels
+            )
+            return (logits, positive_labels_indices)
+
+        else:
+            logits = self._model.get_logits_for_restricted_loss(output_emb)
+
+            return (logits, positive_labels)
+        
     def _create_loss(self) -> Union[torch.nn.BCEWithLogitsLoss, torch.nn.CrossEntropyLoss]:
         if self._loss_type == "BCE":
             return torch.nn.BCEWithLogitsLoss(reduction="sum")
 
-        if self._loss_type == "CE" or self._loss_type == "SCE":
+        if self._loss_type == "CE" or self._loss_type == "SCE" or self._loss_type == "CE_restricted":
             return torch.nn.CrossEntropyLoss()
 
         msg = "Not supported loss_type"
