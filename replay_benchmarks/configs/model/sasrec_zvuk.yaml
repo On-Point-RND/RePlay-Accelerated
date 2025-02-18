@@ -7,16 +7,20 @@ model:
       block_count: 2
       head_count: 2
       max_seq_len: 100
-      hidden_size: 312
+      hidden_size: 256
       dropout_rate: 0.15
       loss_type: CE # CE, BCE, SCE
-      loss_sample_count: [10, 100, 300, 500, 1000]
+      loss_sample_count: [64, 128, 256, 512, 1024]
+      n_buckets: 42
+      bucket_size_x: 42
+      bucket_size_y: [64, 128, 256, 512, 1024] #64, 128, 256, 512, 1024 
+      mix_x: true
     training_params:
-      embedding_dim: 312
+      embedding_dim: 256
       learning_rate: 0.001
-      batch_size: 64
-      num_workers: 4
-      patience: 10
+      batch_size: [64, 128, 256]
+      num_workers: 8
+      patience: 3
       max_epochs: 10
       precision: null #default 32, bf16-mixed
-      number_launches: 3 #Number of experiments for each loass sample count
+      number_launches: 1 #Number of experiments for each loass sample count

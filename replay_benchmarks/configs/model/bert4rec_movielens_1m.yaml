@@ -10,12 +10,17 @@ model:
       hidden_size: 128
       dropout_rate: 0.2
       loss_type: CE # CE, BCE, SCE
-      loss_sample_count: Null
+      loss_sample_count: [64, 128, 256, 512, 1024] 
+      n_buckets: 42
+      bucket_size_x: 42
+      bucket_size_y: [64, 128, 256, 512, 1024] #64, 128, 256, 512, 1024 
+      mix_x: true
     training_params:
       embedding_dim: 128
       learning_rate: 0.0001
-      batch_size: 256
+      batch_size: [64, 128, 256] #64, 128, 256
       num_workers: 4
-      patience: 10
-      max_epochs: 200
+      patience: 5
+      max_epochs: 30
       precision: null #default 32, bf16-mixed
+      number_launches: 5 #Number of experiments for each loss sample count

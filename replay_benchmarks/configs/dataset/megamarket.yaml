@@ -1,6 +1,7 @@
 dataset:
   name: megamarket
   path: "./replay_benchmarks/data/megamarket"
+  seq_len: 328
 
   feature_schema:
     query_column: "user_id"

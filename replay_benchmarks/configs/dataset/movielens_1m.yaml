@@ -1,6 +1,7 @@
 dataset:
   name: movielens_1m
   path: "./replay_benchmarks/data/movielens_1m"
+  seq_len: 328
 
   feature_schema:
     query_column: "user_id"
