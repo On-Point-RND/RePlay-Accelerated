@@ -17,6 +17,14 @@ from bnbtriton.quantize_rowwise import quantize_rowwise
 from bnbtriton.int8_matmul_rowwise_dequantize import int8_matmul_rowwise_dequantize
 from bnbtriton.triton_utils import is_triton_available
 
+from bnbtriton.quantize_rowwise_bf16 import quantize_rowwise_bf16
+from bnbtriton.int8_matmul_rowwise_dequantize_bf16 import int8_matmul_rowwise_dequantize_bf16
+
+from bnbtriton.prune_rowwise import prune_rowwise
+
+from bnbtriton.fp16_matmul import fp16_matmul
+
+# import logging
 
 class Bert4RecModel(torch.nn.Module):
     """
@@ -167,6 +175,18 @@ class Bert4RecModel(torch.nn.Module):
         :returns: Logits for each element in `item_ids`.
         """
         return self._head(out_embeddings, item_ids)
+
+    def get_logits_for_restricted_loss(self, out_embeddings: torch.Tensor, item_ids: Optional[torch.LongTensor] = None) -> torch.Tensor:
+        """
+        Apply head to output embeddings of `forward_step`.
+
+        :param out_embeddings: Embeddings after `forward step`.
+        :param item_ids: Item ids to calculate scores.
+            Default: ``None``.
+
+        :returns: Logits for each element in `item_ids`.
+        """
+        return self._head.forward_for_restricted_loss(out_embeddings, item_ids)
 
     def get_query_embeddings(self, inputs: TensorMap, pad_mask: torch.BoolTensor, token_mask: torch.BoolTensor):
         """
@@ -394,6 +414,22 @@ class BaseHead(ABC, torch.nn.Module):
 
         logits = item_embeddings.matmul(out_embeddings.unsqueeze(-1)).squeeze(-1) + bias
         return logits
+
+    def forward_for_restricted_loss(
+        self,
+        out_embeddings: torch.Tensor,
+        item_ids: Optional[torch.LongTensor] = None,           
+    ) -> torch.Tensor:
+        
+        item_embeddings = self.get_item_embeddings()
+        bias = self.get_bias()
+        if item_ids is not None:
+            item_embeddings = item_embeddings[item_ids]
+            bias = bias[item_ids]
+
+        logits = torch.nn.functional.linear(out_embeddings, item_embeddings, bias)        
+        return logits                
+
 
     @abstractmethod
     def get_item_embeddings(self) -> torch.Tensor:  # pragma: no cover
