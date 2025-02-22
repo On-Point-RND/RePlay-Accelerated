@@ -37,6 +37,7 @@ class SasRec(lightning.LightningModule):
         bucket_size_x: int = 100,
         bucket_size_y: int = 100,
         mix_x: bool = False,
+        restrict_items: bool = False,
         optimizer_factory: OptimizerFactory = FatOptimizerFactory(),
         lr_scheduler_factory: Optional[LRSchedulerFactory] = None,
     ):
@@ -103,6 +104,7 @@ class SasRec(lightning.LightningModule):
         self._bucket_size_x = bucket_size_x
         self._bucket_size_y = bucket_size_y
         self._mix_x = mix_x
+        self._restrict_items = restrict_items
         assert negative_sampling_strategy in {"global_uniform", "inbatch"}
 
         item_count = tensor_schema.item_id_features.item().cardinality
@@ -479,9 +481,9 @@ class SasRec(lightning.LightningModule):
         feature_tensors: TensorMap,
         positive_labels: torch.LongTensor,
         padding_mask: torch.BoolTensor,
-        target_padding_mask: torch.BoolTensor,
-        restrict_items: bool = True
+        target_padding_mask: torch.BoolTensor
     ):
+        device = padding_mask.device
         positive_labels = cast(
             torch.LongTensor, torch.masked_select(positive_labels, padding_mask)
         )  # (masked_batch_seq_size,)
@@ -490,18 +492,34 @@ class SasRec(lightning.LightningModule):
         output_emb = self._model.forward_step(feature_tensors, padding_mask)
         output_emb = output_emb[padding_mask]
         
-        if restrict_items:
-            unique_positive_labels, positive_labels_indices = \
-                positive_labels.unique(return_inverse=True)
+        if self._restrict_items:
+            # unique_positive_labels, positive_labels_indices = positive_labels.unique(return_inverse=True)
+            if self._loss_sample_count is not None:
+                vocab_size = self._vocab_size
+                n_negative_samples = self._loss_sample_count
+                n_negative_samples = min(n_negative_samples, vocab_size)
+                negative_labels = torch.randint(
+                    low=0,
+                    high=vocab_size,
+                    size=(n_negative_samples, ),
+                    dtype=torch.long,
+                    device=device,
+                )
+                labels = torch.hstack((positive_labels, negative_labels))
+                unique_items, item_indices = labels.unique(return_inverse=True)
+                positive_labels_indices = item_indices[0:positive_labels.shape[0]]
+            else:
+                unique_items, positive_labels_indices = \
+                    positive_labels.unique(return_inverse=True)
+
             logits = self._model.get_logits_for_restricted_loss(
                 output_emb, 
-                unique_positive_labels
+                unique_items
             )
             return (logits, positive_labels_indices)
 
         else:
             logits = self._model.get_logits_for_restricted_loss(output_emb)
-
             return (logits, positive_labels)
         
     def _create_loss(self) -> Union[torch.nn.BCEWithLogitsLoss, torch.nn.CrossEntropyLoss]:
