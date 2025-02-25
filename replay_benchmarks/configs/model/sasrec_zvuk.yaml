@@ -9,8 +9,10 @@ model:
       max_seq_len: 100
       hidden_size: 312
       dropout_rate: 0.15
-      loss_type: BCE # CE, BCE, SCE
+      loss_type: ARCFACE # CE, BCE, SCE, ARCFACE
       loss_sample_count: 500
+      margin: 5.0 #parameter for ARCFACE loss function
+      scale: 1.0 #parameter for ARCFACE loss function
     training_params:
       embedding_dim: 312
       learning_rate: 0.001
