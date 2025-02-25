@@ -1,11 +1,11 @@
 dataset:
-  name: movielens_1m
-  path: "./replay_benchmarks/data/movielens_1m"
+  name: beauty
+  path: "./replay_benchmarks/data/beauty"
 
   feature_schema:
     query_column: "user_id"
     item_column: "item_id"
-    rating_column: "rating"
+    rating_column: "overall"
     timestamp_column: "timestamp"
 
   preprocess:
