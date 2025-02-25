@@ -1,6 +1,6 @@
 defaults:
-  - dataset: movielens_1m
-  - model: sasrec_movielens_1m
+  - dataset: zvuk
+  - model: bert4rec_zvuk
   - mode: train
   - acceleration: null
 
@@ -8,7 +8,7 @@ env:
   SEED: 42
   CUDA_DEVICE_ORDER: "PCI_BUS_ID" 
   OMP_NUM_THREADS: "4"
-  CUDA_VISIBLE_DEVICES: "1"
+  CUDA_VISIBLE_DEVICES: "0"
 
 paths:
   data_dir: "replay_benchmarks/data/"

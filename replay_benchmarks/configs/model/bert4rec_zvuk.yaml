@@ -18,7 +18,7 @@ model:
     training_params:
       embedding_dim: 312
       learning_rate: 0.001
-      batch_size: [32] #64, 128, 256
+      batch_size: [8, 16, 32] #64, 128, 256
       num_workers: 4
       patience: 3
       max_epochs: 10

@@ -222,25 +222,128 @@ class TrainRunner(BaseRunner):
 
         self.tokenizer.save(f"{save_path}/sequence_tokenizer")
         logging.info(f"Best model saved at: {save_path}")
+    
+    def _prepare_tables_and_params(self):
+        self.original_model_name = self.config['model']['save_name']
+        self.seq_len = self.config['dataset']['seq_len']      
+        self.batch_size_list = self.model_cfg["training_params"]["batch_size"]
+        self.number_launches = self.model_cfg["training_params"]["number_launches"]
+  
+        if(self.model_cfg["model_params"]["loss_type"]=='CE'):
+            self.loss_sample_count_list = self.model_cfg["model_params"]["loss_sample_count"]
+            self.loss_sample_count_list.append(None) # add full CE
+        else:
+            self.loss_sample_count_list = self.model_cfg["model_params"]["bucket_size_y"]
+        
+        self.all_metrics = -np.inf*np.ones(shape=(len(self.loss_sample_count_list), len(self.batch_size_list), self.number_launches))
+        self.max_allocated_memory = -np.inf*np.ones(shape=(len(self.loss_sample_count_list), len(self.batch_size_list), self.number_launches))
+        self.allocated_memory = -np.inf*np.ones(shape=(len(self.loss_sample_count_list), len(self.batch_size_list), self.number_launches))
+    
+    def _save_allocated_memory(self, sample_count_i, batch_size_i, launch_number):
+        torch.cuda.synchronize()
+        allocated = torch.cuda.memory_allocated(device=self.devices[0]) / 1024**3 #GB
+        max_allocated = torch.cuda.max_memory_allocated(device=self.devices[0]) / 1024**3 #GB     
+        torch.cuda.reset_peak_memory_stats()
+        self.allocated_memory[sample_count_i, batch_size_i, launch_number] = allocated
+        self.max_allocated_memory[sample_count_i, batch_size_i, launch_number] = max_allocated
+
+        np.save(os.path.join(
+                self.config["paths"]["log_dir"],
+                f"{self.model_save_name}_{self.dataset_name}_allocated_memory",
+            ), self.allocated_memory)
+        np.save(os.path.join(
+                self.config["paths"]["log_dir"],
+                f"{self.model_save_name}_{self.dataset_name}_max_allocated_memory",
+            ), self.max_allocated_memory)
+        
+        pd_all_mem = pd.DataFrame(self.allocated_memory.mean(-1), columns=self.batch_size_list, index=self.loss_sample_count_list)
+        pd_all_mem.to_csv(
+            os.path.join(
+                self.config["paths"]["log_dir"],
+                f"{self.original_model_name}_{self.dataset_name}_allocated_memory_mean.csv",
+            ),
+        )
+
+        pd_max_all_mem = pd.DataFrame(self.max_allocated_memory.mean(-1), columns=self.batch_size_list, index=self.loss_sample_count_list)
+        pd_max_all_mem.to_csv(
+            os.path.join(
+                self.config["paths"]["log_dir"],
+                f"{self.original_model_name}_{self.dataset_name}_max_allocated_memory_mean.csv",
+            ),
+        )
+    
+    def _save_all_launches_metrics(self, sample_count_i, batch_size_i, launch_number, test_metric):
+        self.all_metrics[sample_count_i, batch_size_i, launch_number] = test_metric #test_metrics['10']['NDCG']
+        np.save(os.path.join(
+                self.config["paths"]["log_dir"],
+                f"{self.model_save_name}_{self.dataset_name}_all_launches_metrics",
+            ), self.all_metrics)
+        pd_all_met = pd.DataFrame(self.all_metrics.mean(-1), columns=self.batch_size_list, index=self.loss_sample_count_list)
+        pd_all_met.to_csv(
+            os.path.join(
+                self.config["paths"]["log_dir"],
+                f"{self.original_model_name}_{self.dataset_name}_all_launches_metrics.csv",
+            ),
+        )
+
+    def _plot_metric_convergence(self, need_ci=False):
+        mean_metric = self.all_metrics.mean(axis=-1)
+        std_metric = self.all_metrics.std(axis=-1)
+
+        confidence = 0.95
+        if(self.number_launches > 1):
+            confidence = 0.95
+            t_value = st.t.ppf((1 + confidence) / 2, df=self.number_launches-1)
+            margin_of_error = t_value * (std_metric / np.sqrt(self.number_launches))
+            lower_bound = mean_metric - margin_of_error
+            upper_bound = mean_metric + margin_of_error
+        else:
+            lower_bound, upper_bound = mean_metric, mean_metric
+        
+        plt.figure(figsize=(12,10))
+        for bs_i, bs in enumerate(self.batch_size_list):     
+            if(self.model_cfg["model_params"]["loss_type"]=='CE'):
+                lscl = self.loss_sample_count_list[:-1]
+                mm = mean_metric[:-1, bs_i]
+                ub = upper_bound[:-1, bs_i]
+                lb = lower_bound[:-1, bs_i]
+                # if pure CE
+                if((mean_metric[-1, bs_i]>0).all()):
+                    metric_full = mean_metric[-1, bs_i]    
+                    plt.plot([lscl[0], lscl[-1]], [metric_full, metric_full], '--', label=f'{self.model_cfg["model_params"]["loss_type"]}_all_negative_bs={bs}')
+            else:
+                lscl = self.loss_sample_count_list
+                mm = mean_metric[:, bs_i]
+                ub = upper_bound[:, bs_i]
+                lb = lower_bound[:, bs_i]
+
+            plt.plot(lscl, mm, 'o-', label=f'{self.model_cfg["model_params"]["loss_type"]}_metrics_bs={bs}')
+            if(need_ci):
+                plt.fill_between(lscl, lb, ub, color='b', alpha=0.2)
+            plt.xscale('log')
+
+            for xi, yi in zip(lscl, mm):
+                plt.plot([xi, xi],[yi, self.all_metrics[self.all_metrics>0].min()], 'b--', alpha=0.25)
+        for xi in lscl:
+            plt.text(xi, self.all_metrics[self.all_metrics>0].min(), f"{xi:.1f}", fontsize=10, ha='right')
+            
+        plt.legend()
+        plt.title(f'Metrics with {self.model_cfg["model_params"]["loss_type"]}')
+        plt.xlabel('Number samples')
+        plt.ylabel('NDCG@10 metric')
+        plt.grid('on')   
+        path_for_save = os.path.join(
+            self.config["paths"]["results_dir"],
+            f"{self.model_save_name}_{self.dataset_name}_metrics_convergence.png",
+            )
+        plt.savefig(path_for_save)
 
     def run(self):
         """Execute the training pipeline."""
         
-        model_save_name = self.config['model']['save_name']
-        seq_len = self.config['dataset']['seq_len']      
-        batch_size_list = self.model_cfg["training_params"]["batch_size"]
-        number_launches = self.model_cfg["training_params"]["number_launches"]
-
-        if (self.model_cfg["model_params"]["loss_type"]=='SCE'):
-            loss_sample_count_list = self.model_cfg["model_params"]["bucket_size_y"]
-        else: # CE loss function
-            loss_sample_count_list = self.model_cfg["model_params"]["loss_sample_count"]
-            loss_sample_count_list.append(None)
+        self._prepare_tables_and_params()
         
-        all_metrics = -np.inf*np.ones(shape=(len(loss_sample_count_list), len(batch_size_list), number_launches))
-        allocated_memory = -np.inf*np.ones(shape=(len(loss_sample_count_list), len(batch_size_list)))
-
-        for batch_size_i, batch_size in enumerate(batch_size_list):
+        for batch_size_i, batch_size in enumerate(self.batch_size_list):
             self.model_cfg["training_params"]["batch_size"] = batch_size
             logging.info(f'batch_size = {batch_size}')
 
@@ -248,9 +351,9 @@ class TrainRunner(BaseRunner):
                 self._load_dataloaders()
             )
  
-            for sample_count_i, loss_sample_count in enumerate(loss_sample_count_list):  
+            for sample_count_i, loss_sample_count in enumerate(self.loss_sample_count_list):  
                 if (self.model_cfg["model_params"]["loss_type"]=='SCE'):
-                    n_bucket = bucket_size_x = int(2.0 * (batch_size * seq_len) ** 0.5)
+                    n_bucket = bucket_size_x = int(2.0 * (batch_size * self.seq_len) ** 0.5)
                     self.model_cfg["model_params"]["bucket_size_x"] = bucket_size_x
                     self.model_cfg["model_params"]["bucket_size_y"] = loss_sample_count
                     self.model_cfg["model_params"]["n_buckets"] = n_bucket
@@ -259,10 +362,10 @@ class TrainRunner(BaseRunner):
                     self.model_cfg["model_params"]["loss_sample_count"] = loss_sample_count    
                     logging.info(f'loss_sample_count = {loss_sample_count}')
 
-                self.config['model']['save_name'] = f"{model_save_name}_bs_{batch_size}_neg_{loss_sample_count}"
+                self.config['model']['save_name'] = f"{self.original_model_name}_bs_{batch_size}_neg_{loss_sample_count}"
 
                 try:
-                    for launch_number in range(number_launches):
+                    for launch_number in range(self.number_launches):
                         new_seed = self.config["env"]["SEED"] + launch_number
                         seed_everything(new_seed)
                         logging.info(f"Global seed: {new_seed}")
@@ -294,30 +397,18 @@ class TrainRunner(BaseRunner):
                             postprocessors=[RemoveSeenItems(self.seq_val_dataset)],
                         )
 
-                        #torch.cuda.memory._record_memory_history(max_entries=100000)
-                        #torch.cuda.reset_peak_memory_stats(device=None)
-                        devices = [int(self.config["env"]["CUDA_VISIBLE_DEVICES"])]
+                        self.devices = [int(self.config["env"]["CUDA_VISIBLE_DEVICES"])]
                         trainer = L.Trainer(
                             max_epochs=self.model_cfg["training_params"]["max_epochs"],
                             callbacks=[checkpoint_callback, early_stopping, validation_metrics_callback],
                             logger=[self.csv_logger, self.tb_logger],
                             precision=self.model_cfg["training_params"]["precision"],
-                            devices=devices
+                            devices=self.devices
                         )
 
                         trainer.fit(model, train_dataloader, val_dataloader)
 
-                        #torch.cuda.synchronize()
-                        #allocated = torch.cuda.max_memory_allocated(device=None) / 1024**3 #GB
-                        #torch.cuda.reset_peak_memory_stats()
-                        #allocated_memory[sample_count_i, batch_size_i] = allocated
-                        #pd_all_mem = pd.DataFrame(allocated_memory, columns=batch_size_list)
-                        #pd_all_mem.to_csv(
-                        #    os.path.join(
-                        #        self.config["paths"]["log_dir"],
-                        #        f"{model_save_name}_{self.dataset_name}_allocated_memory.csv",
-                        #    ),
-                        #)
+                        self._save_allocated_memory(sample_count_i, batch_size_i, launch_number)
 
                         if self.model_name.lower() == "sasrec":
                             best_model = SasRec.load_from_checkpoint(checkpoint_callback.best_model_path)
@@ -333,7 +424,7 @@ class TrainRunner(BaseRunner):
                             rating_column="score",
                             postprocessors=[RemoveSeenItems(self.seq_test_dataset)],
                         )
-                        L.Trainer(callbacks=[pandas_prediction_callback], inference_mode=True, devices=devices).predict(
+                        L.Trainer(callbacks=[pandas_prediction_callback], inference_mode=True, devices=self.devices).predict(
                             best_model, dataloaders=prediction_dataloader, return_predictions=False
                         )
 
@@ -350,65 +441,16 @@ class TrainRunner(BaseRunner):
                             ),
                         )
 
-                        all_metrics[sample_count_i, batch_size_i, launch_number] = test_metrics['10']['NDCG']
-                        np.save(os.path.join(
-                                self.config["paths"]["log_dir"],
-                                f"{self.model_save_name}_{self.dataset_name}_all_launches_metrics",
-                            ), all_metrics)
+                        self._save_all_launches_metrics(sample_count_i, batch_size_i, launch_number, test_metrics['10']['NDCG'])
                     # end for launch_number in range(number_launches):
                 except RuntimeError as error_message:
-                    print(error_message)
-                    logging.info(f"Can not run batch_size = {batch_size} and negative_samples = {loss_sample_count}")
+                    if str(error_message).startswith('CUDA out of memory.'):
+                        print(f"Can not run batch_size = {batch_size} and negative_samples = {loss_sample_count}")
+                    else:
+                        with open(f"RuntimeError {self.dataset_name}_{self.config['model']['save_name']}.txt", 'w') as file: 
+                            file.write(str(error_message))
+                        print(error_message)
             # end for sample_count_i, loss_sample_count in enumerate(loss_sample_count_list):
         # end for batch_size_i, batch_size in enumerate(batch_size_list):
         
-        mean_metric = all_metrics.mean(axis=-1)
-        std_metric = all_metrics.std(axis=-1)
-
-        confidence = 0.95
-        if(number_launches>1):
-            confidence = 0.95
-            t_value = st.t.ppf((1 + confidence) / 2, df=number_launches-1)
-            margin_of_error = t_value * (std_metric / np.sqrt(number_launches))
-            lower_bound = mean_metric - margin_of_error
-            upper_bound = mean_metric + margin_of_error
-        else:
-            lower_bound, upper_bound = mean_metric, mean_metric
-        
-        plt.figure(figsize=(12,10))
-        for bs_i, bs in enumerate(batch_size_list): 
-            if(self.model_cfg["model_params"]["loss_type"]=='SCE'): 
-                lscl = loss_sample_count_list
-                mm = mean_metric[:, bs_i]
-                ub = upper_bound[:, bs_i]
-                lb = lower_bound[:, bs_i]
-            else:
-                lscl = loss_sample_count_list[:-1]
-                mm = mean_metric[:-1, bs_i]
-                ub = upper_bound[:-1, bs_i]
-                lb = lower_bound[:-1, bs_i]
-                # if pure CE
-                if((mean_metric[-1, bs_i]>0).all()):
-                    metric_full = mean_metric[-1, bs_i]    
-                    plt.plot([lscl[0], lscl[-1]], [metric_full, metric_full], '--', label=f'{self.model_cfg["model_params"]["loss_type"]}_all_negative_bs={bs}')
-                # end if pure CE
-
-            plt.plot(lscl, mm, 'o-', label=f'{self.model_cfg["model_params"]["loss_type"]}_metrics_bs={bs}')
-            plt.fill_between(lscl, lb, ub, color='b', alpha=0.2)
-            plt.xscale('log')
-
-            for xi, yi in zip(lscl, mm):
-                plt.plot([xi, xi],[yi, all_metrics[all_metrics>0].min()], 'b--', alpha=0.25)
-        for xi in lscl:
-            plt.text(xi, all_metrics[all_metrics>0].min(), f"{xi:.1f}", fontsize=10, ha='right')
-            
-        plt.legend()
-        plt.title(f'Metrics with {self.model_cfg["model_params"]["loss_type"]}')
-        plt.xlabel('Number samples')
-        plt.ylabel('NDCG@10 metric')
-        plt.grid('on')   
-        path_for_save = os.path.join(
-            self.config["paths"]["results_dir"],
-            f"{self.model_save_name}_{self.dataset_name}_metrics_convergence.png",
-            )
-        plt.savefig(path_for_save)
+        self._plot_metric_convergence(need_ci=False)
