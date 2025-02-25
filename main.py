@@ -7,7 +7,7 @@ import yaml
 import argparse
 
 from replay_benchmarks.utils.conf import load_config, seed_everything
-from replay_benchmarks import TrainRunner, InferRunner
+from replay_benchmarks import TrainRunner, InferRunner, ExperimentRunner
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,6 +34,8 @@ def main() -> None:
         runner = TrainRunner(config)
     elif config["mode"]["name"] == "infer":
         runner = InferRunner(config)
+    elif config["mode"]["name"] == "hyperparameter_experiment":
+        runner = ExperimentRunner(config)
     else:
         raise ValueError(f"Unsupported mode: {config['mode']}")
 

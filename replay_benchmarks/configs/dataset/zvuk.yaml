@@ -1,6 +1,7 @@
 dataset:
   name: zvuk
   path: "./replay_benchmarks/data/zvuk"
+  seq_len: 657
 
   feature_schema:
     query_column: "user_id"

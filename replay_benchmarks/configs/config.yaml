@@ -1,7 +1,7 @@
 defaults:
-  - dataset: zvuk
-  - model: bert4rec_zvuk
-  - mode: train
+  - dataset: movielens_1m
+  - model: sasrec_movielens_1m
+  - mode: hyperparameter_experiment
   - acceleration: null
 
 env:

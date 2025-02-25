@@ -1,0 +1,9 @@
+mode:
+  name: hyperparameter_experiment
+
+  max_seq_len: [128]
+  loss_type: CE
+  loss_sample_count: [32, null]
+  bucket_size_y: [64, 256, 1024, 2048]
+  batch_size: [128, 256]
+  number_launches: 1
