@@ -2,6 +2,11 @@ import logging
 import os
 import yaml
 from pathlib import Path
+from datetime import datetime
+import contextlib
+import sys
+import glob
+import re
 
 import torch
 import numpy as np
@@ -9,6 +14,7 @@ import pandas as pd
 from replay_benchmarks.utils.conf import seed_everything
 
 import lightning as L
+from lightning.pytorch.profilers import SimpleProfiler
 from lightning.pytorch.loggers import CSVLogger, TensorBoardLogger
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from lightning.pytorch.profilers import SimpleProfiler
@@ -54,14 +60,13 @@ class ExperimentRunner(BaseRunner):
         self.seq_val_dataset = None
         self.seq_test_dataset = None
 
-        # Loggers
         self.log_dir = Path(config["paths"]["log_dir"]) / self.dataset_name / self.model_save_name
         self.csv_logger = CSVLogger(save_dir=self.log_dir / "csv_logs")
         self.tb_logger = TensorBoardLogger(save_dir=self.log_dir / "tb_logs")
 
-        self._check_paths()
+        # self._check_paths()
 
-    def _check_paths(self):
+    def _check_paths(self, additional_paths=None):
         """Ensure all required directories exist."""
         required_paths = [
             self.config["paths"]["log_dir"],
@@ -70,6 +75,10 @@ class ExperimentRunner(BaseRunner):
         ]
         for path in required_paths:
             Path(path).mkdir(parents=True, exist_ok=True)
+
+        for path in additional_paths:
+            Path(path).mkdir(parents=True, exist_ok=True)
+
 
     def _initialize_model(self):
         """Initialize the model based on the configuration."""
@@ -90,6 +99,30 @@ class ExperimentRunner(BaseRunner):
             return Bert4Rec(**model_config)
         else:
             raise ValueError(f"Unsupported model type: {self.model_name}")
+
+    def _setup_logger(self):
+        """Set up the logger to write to a file."""
+        logger = logging.getLogger('ExperimentRunner')
+
+        for handler in logger.handlers[:]:
+            logger.removeHandler(handler)
+
+        logger.setLevel(logging.INFO)
+
+        fh = logging.FileHandler(self.log_dir / 'experiment.log')
+        fh.setLevel(logging.INFO)
+
+        ch = logging.StreamHandler()
+        ch.setLevel(logging.ERROR)
+
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        fh.setFormatter(formatter)
+        ch.setFormatter(formatter)
+
+        logger.addHandler(fh)
+        logger.addHandler(ch)
+
+        return logger
 
     def _prepare_dataloaders(
         self,
@@ -219,7 +252,7 @@ class ExperimentRunner(BaseRunner):
         )
 
         self.tokenizer.save(f"{save_path}/sequence_tokenizer")
-        logging.info(f"Best model saved at: {save_path}")
+        self.logger.info(f"Best model saved at: {save_path}")
 
     def _prepare_tables_and_params(self):
         self.original_model_name = self.config['model']['save_name'] 
@@ -241,34 +274,27 @@ class ExperimentRunner(BaseRunner):
                             self.number_launches)
         
         self.all_metrics = self.max_allocated_memory = self.allocated_memory = -np.inf * np.ones(shape=self.array_shape)
-    
-    def _save_allocated_memory(self, indeces):
-        torch.cuda.synchronize()
-        allocated = torch.cuda.memory_allocated(device=self.devices[0]) / 1024**3 #GB
-        max_allocated = torch.cuda.max_memory_allocated(device=self.devices[0]) / 1024**3 #GB     
-        torch.cuda.reset_peak_memory_stats()
-        self.allocated_memory[indeces] = allocated
-        self.max_allocated_memory[indeces] = max_allocated
 
-        np.save(os.path.join(
-                self.config["paths"]["log_dir"],
-                self.dataset_name,
-                f"{self.model_save_name}_allocated_memory",
-            ), self.allocated_memory)
-        np.save(os.path.join(
-                self.config["paths"]["log_dir"],
-                self.dataset_name,
-                f"{self.model_save_name}_max_allocated_memory",
-            ), self.max_allocated_memory)
-    
-    def _save_all_launches_metrics(self, indeces, test_metric):
-        self.all_metrics[indeces] = test_metric #test_metrics['10']['NDCG']
-        np.save(os.path.join(
-                self.config["paths"]["log_dir"],
-                self.dataset_name,
-                f"{self.model_save_name}_all_launches_metrics",
-            ), self.all_metrics)
-    
+    def _save_allocated_memory(self):
+        torch.cuda.synchronize()
+        allocated = torch.cuda.memory_allocated(device=self.devices[0]) / 1024**3  # GB
+        max_allocated = torch.cuda.max_memory_allocated(device=self.devices[0]) / 1024**3  # GB
+        torch.cuda.reset_peak_memory_stats()
+
+        data = {
+            'allocated_memory': [allocated],
+            'max_allocated_memory': [max_allocated]
+        }
+        df = pd.DataFrame(data)
+
+        df.to_csv(os.path.join(
+            self.res_dir,
+            "memory_stats.csv"
+        ), index=False)
+
+        self.logger.info(f"Allocated memory: {allocated} GB")
+        self.logger.info(f"Max allocated memory: {max_allocated} GB")
+
     def _run_one_launch(self, indeces, train_dataloader, val_dataloader, prediction_dataloader):
         model = self._initialize_model()
         checkpoint_callback = ModelCheckpoint(
@@ -296,17 +322,20 @@ class ExperimentRunner(BaseRunner):
             postprocessors=[RemoveSeenItems(self.seq_val_dataset)],
         )
 
+        profiler = SimpleProfiler(dirpath = self.csv_logger.log_dir, filename = 'simple_profiler')
+
         self.devices = [int(self.config["env"]["CUDA_VISIBLE_DEVICES"])]
         trainer = L.Trainer(
             max_epochs=self.model_cfg["training_params"]["max_epochs"],
             callbacks=[checkpoint_callback, early_stopping, validation_metrics_callback],
             logger=[self.csv_logger, self.tb_logger],
             precision=self.model_cfg["training_params"]["precision"],
-            devices=self.devices
+            devices=self.devices,
+            profiler=profiler
         )
 
         trainer.fit(model, train_dataloader, val_dataloader)
-        self._save_allocated_memory(indeces)
+        self._save_allocated_memory()
 
         if self.model_name.lower() == "sasrec":
             best_model = SasRec.load_from_checkpoint(checkpoint_callback.best_model_path)
@@ -314,7 +343,7 @@ class ExperimentRunner(BaseRunner):
             best_model = Bert4Rec.load_from_checkpoint(checkpoint_callback.best_model_path)
         self.save_model(trainer, best_model)
 
-        logging.info("Evaluating on test set...")
+        self.logger.info("Evaluating on test set...")
         pandas_prediction_callback = PandasPredictionCallback(
             top_k=max(self.config["metrics"]["ks"]),
             query_column="user_id",
@@ -322,7 +351,8 @@ class ExperimentRunner(BaseRunner):
             rating_column="score",
             postprocessors=[RemoveSeenItems(self.seq_test_dataset)],
         )
-        L.Trainer(callbacks=[pandas_prediction_callback], inference_mode=True, devices=self.devices).predict(
+        
+        L.Trainer(callbacks=[pandas_prediction_callback], precision=self.model_cfg["training_params"]["precision"], inference_mode=True, devices=self.devices).predict(
             best_model, dataloaders=prediction_dataloader, return_predictions=False
         )
 
@@ -330,17 +360,79 @@ class ExperimentRunner(BaseRunner):
         recommendations = self.tokenizer.query_and_item_id_encoder.inverse_transform(
             result
         )
+
         test_metrics = self.calculate_metrics(recommendations, self.raw_test_gt)
-        logging.info(test_metrics)
+        self.logger.info(test_metrics)
         test_metrics.to_csv(
             os.path.join(
-                self.config["paths"]["results_dir"],
-                f"{self.config['model']['save_name']}_{self.dataset_name}_test_metrics.csv",
+                self.res_dir,
+                f"test_metrics.csv",
             ),
         )
 
-        self._save_all_launches_metrics(indeces, test_metrics['10']['NDCG'])
+        # self._save_all_launches_metrics(indeces, test_metrics['10']['NDCG'])
     
+    def generate_csv_res(self, additional_rows_dict):
+
+        def find_latest_version_path(base_path):
+            version_dirs = glob.glob(os.path.join(base_path, 'version_*'))
+            version_numbers = [int(os.path.basename(d).split('_')[1]) for d in version_dirs]
+            latest_version_number = max(version_numbers)
+            latest_version_path = os.path.join(base_path, f'version_{latest_version_number}')
+            return Path(latest_version_path)
+            
+        train_metrics_logs = pd.read_csv(find_latest_version_path(self.log_dir / "csv_logs/lightning_logs") / "metrics.csv")
+        simple_profiler_path = find_latest_version_path(self.log_dir / "csv_logs/lightning_logs") / "fit-simple_profiler.txt"
+        memory_results = pd.read_csv(self.res_dir / "memory_stats.csv")
+        test_metrics = pd.read_csv(self.res_dir / "test_metrics.csv")
+        results_csv_path = Path(self.config["paths"]["main_csv_res_dir"]) / "results.csv"
+
+        last_row = train_metrics_logs.iloc[-1]
+        second_last_row = train_metrics_logs.iloc[-2]
+        last_row_cleaned = last_row.dropna()
+        second_last_row_cleaned = second_last_row.dropna()
+        combined_row = pd.concat([second_last_row_cleaned, last_row_cleaned])
+        combined_row = combined_row.drop_duplicates()
+        combined_row = combined_row.add_suffix('_val')
+
+        train_loss_epoch = np.round(train_metrics_logs['train_loss_epoch'].dropna().tolist(), 3)
+        train_loss_step = np.round(train_metrics_logs['train_loss_step'].dropna().tolist(), 3)
+        train_loss_epoch_str = ' '.join(map(str, train_loss_epoch))
+        train_loss_step_str = ' '.join(map(str, train_loss_step))
+        combined_row_str = ' '.join(combined_row.astype(str)) + ' ' + train_loss_epoch_str + ' ' + train_loss_step_str
+        combined_row['train_loss_epoch_val'] = train_loss_epoch_str
+        combined_row['train_loss_step_val'] = train_loss_step_str
+
+        with open(simple_profiler_path, 'r') as file:
+            content = file.read()
+        pattern = re.compile(r'\|  (run_training_epoch|run_training_batch)  .*?  (\d+\.\d+)')
+        matches = pattern.findall(content)
+        results = {}
+        for match in matches:
+            action, duration = match
+            results[action] = float(duration)
+        combined_row['run_training_epoch'] = results.get('run_training_epoch', 'Null')
+        combined_row['run_training_batch'] = results.get('run_training_batch', 'Null')
+
+        combined_row['allocated_memory'] = memory_results['allocated_memory'].iloc[0] if not memory_results['allocated_memory'].empty else 'Null'
+        combined_row['max_allocated_memory'] = memory_results['max_allocated_memory'].iloc[0] if not memory_results['max_allocated_memory'].empty else 'Null'
+
+        test_metrics.rename(columns={'Unnamed: 0': 'row_name'}, inplace=True)
+        for row_index, row in test_metrics.iterrows():
+            for col in test_metrics.columns:
+                if col != 'row_name':
+                    combined_row[f"{row['row_name']}_{col}_test"] = row[col] if not pd.isna(row[col]) else 'Null'
+
+        for key, value in additional_rows_dict.items():
+            combined_row[key] = value
+
+        combined_row_df = pd.DataFrame(combined_row).T
+        combined_row_df
+
+        if not pd.io.common.file_exists(results_csv_path):
+            combined_row_df.to_csv(results_csv_path, index=False)
+        else:
+            combined_row_df.to_csv(results_csv_path, mode='a', header=False, index=False)
 
     def run(self):
 
@@ -357,117 +449,66 @@ class ExperimentRunner(BaseRunner):
                 )
 
                 for sample_count_i, loss_sample_count in enumerate(self.loss_sample_count_list):
-                    if (self.config["mode"]["loss_type"]=='SCE'):
-                        n_bucket = bucket_size_x = int(2.0 * (batch_size * self.dataset_seq_len) ** 0.5)
-                        self.model_cfg["model_params"]["bucket_size_x"] = bucket_size_x
-                        self.model_cfg["model_params"]["bucket_size_y"] = loss_sample_count
-                        self.model_cfg["model_params"]["n_buckets"] = n_bucket
-                    else: # CE, BCE, ARCFACE loss function
-                        self.model_cfg["model_params"]["loss_sample_count"] = loss_sample_count 
                     
-                    try:
-                        for launch_number in range(self.number_launches):
-                            new_seed = self.config["env"]["SEED"] + launch_number
-                            seed_everything(new_seed)
-
-                            logging.info(f"Run experiment with:")
-                            logging.info(f"batch_size = {batch_size}")
-                            logging.info(f"loss_sample_count = {loss_sample_count}")
-                            logging.info(f"max_model_seq_len = {max_seq_len}")
-                            logging.info(f"random seed = {new_seed}")
-
+                    for launch_number in range(self.number_launches):
+                        new_seed = self.config["env"]["SEED"] + launch_number
+                        seed_everything(new_seed)
                         
-                            ### main train launch ###
-                            self._run_one_launch(indeces=(batch_size_i, sample_count_i, max_seq_len_i),
-                                                    train_dataloader=train_dataloader, 
-                                                    val_dataloader=val_dataloader,
-                                                    prediction_dataloader=prediction_dataloader)
-                            #########################
+                        if (self.config["mode"]["loss_type"]=='SCE'):
+                            n_bucket = bucket_size_x = int(2.0 * (batch_size * self.dataset_seq_len) ** 0.5)
+                            self.model_cfg["model_params"]["bucket_size_x"] = bucket_size_x
+                            self.model_cfg["model_params"]["bucket_size_y"] = loss_sample_count
+                            self.model_cfg["model_params"]["n_buckets"] = n_bucket
+                        else: # CE, BCE, ARCFACE loss function
+                            self.model_cfg["model_params"]["loss_sample_count"] = loss_sample_count 
+                        
+                        self.model_save_name = self.model_name+f"_{batch_size=}_{loss_sample_count=}_{max_seq_len=}_{launch_number=}"
+                        self.log_dir = Path(self.config["paths"]["log_dir"]) / self.dataset_name / self.model_save_name
+                        self.res_dir = Path(self.config["paths"]["results_dir"]) / self.dataset_name / self.model_save_name
+                        self.csv_logger = CSVLogger(save_dir=self.log_dir / "csv_logs")
+                        self.tb_logger = TensorBoardLogger(save_dir=self.log_dir / "tb_logs")
 
-                        # end launch_number
-                    except RuntimeError as error_message:
-                        if str(error_message).startswith('CUDA out of memory.'):
-                            logging.info(f"Can not run: {batch_size=}, {loss_sample_count=}, {max_seq_len=}")
-                        else:
-                            error_path = os.path.join(
-                                self.config["paths"]["log_dir"],
-                                self.dataset_name,
-                                f"RuntimeError {self.model_save_name}.txt",
-                            )
-                            with open(error_path, 'w') as file: 
-                                file.write(str(error_message)) 
-                                          
-                # end loss_sample_count
-            # end max_model_seq_len
-        # end batch_size
+                        self._check_paths([self.log_dir, self.res_dir])
+                        self.logger = self._setup_logger()
 
-        logging.info("Initializing model...")
-        model = self._initialize_model()
+                        with open(self.log_dir / 'experiment.log', 'a') as log_file:
+                            with contextlib.redirect_stdout(log_file), contextlib.redirect_stderr(log_file):
+                                try:
+                                    self.logger.info(f"Run experiment with:")
+                                    self.logger.info(f"batch_size = {batch_size}")
+                                    self.logger.info(f"loss_sample_count = {loss_sample_count}")
+                                    self.logger.info(f"max_model_seq_len = {max_seq_len}")
+                                    self.logger.info(f"random seed = {new_seed}")
 
-        checkpoint_callback = ModelCheckpoint(
-            dirpath=os.path.join(
-                self.config["paths"]["checkpoint_dir"],
-                f"{self.model_save_name}_{self.dataset_name}",
-            ),
-            save_top_k=1,
-            verbose=True,
-            monitor="ndcg@10",
-            mode="max",
-        )
+                                
+                                    ### main train launch ###
+                                    self._run_one_launch(indeces=(batch_size_i, sample_count_i, max_seq_len_i),
+                                                            train_dataloader=train_dataloader, 
+                                                            val_dataloader=val_dataloader,
+                                                            prediction_dataloader=prediction_dataloader)
+                                    #########################
+                                    
+                                    add_info = {
+                                        'dataset': self.dataset_name,
+                                        'model': self.model_name,
+                                        'batch_size': batch_size,
+                                        'loss_sample_count': loss_sample_count,
+                                        'max_seq_len': max_seq_len,
+                                        'seed': new_seed,
+                                    }
 
-        early_stopping = EarlyStopping(
-            monitor="ndcg@10",
-            patience=self.model_cfg["training_params"]["patience"],
-            mode="max",
-            verbose=True,
-        )
+                                    self.generate_csv_res(add_info)
 
-        validation_metrics_callback = ValidationMetricsCallback(
-            metrics=self.config["metrics"]["types"],
-            ks=self.config["metrics"]["ks"],
-            item_count=self.item_count,
-            postprocessors=[RemoveSeenItems(self.seq_val_dataset)],
-        )
-
-        devices = [int(self.config["env"]["CUDA_VISIBLE_DEVICES"])]
-        trainer = L.Trainer(
-            max_epochs=self.model_cfg["training_params"]["max_epochs"],
-            callbacks=[checkpoint_callback, early_stopping, validation_metrics_callback],
-            logger=[self.csv_logger, self.tb_logger],
-            precision=self.model_cfg["training_params"]["precision"],
-            devices=devices
-        )
-
-        trainer.fit(model, train_dataloader, val_dataloader)
-
-        if self.model_name.lower() == "sasrec":
-            best_model = SasRec.load_from_checkpoint(checkpoint_callback.best_model_path)
-        elif self.model_name.lower() == "bert4rec":
-            best_model = Bert4Rec.load_from_checkpoint(checkpoint_callback.best_model_path)
-        self.save_model(trainer, best_model)
-
-        logging.info("Evaluating on test set...")
-        pandas_prediction_callback = PandasPredictionCallback(
-            top_k=max(self.config["metrics"]["ks"]),
-            query_column="user_id",
-            item_column="item_id",
-            rating_column="score",
-            postprocessors=[RemoveSeenItems(self.seq_test_dataset)],
-        )
-        L.Trainer(callbacks=[pandas_prediction_callback], inference_mode=True, devices=devices).predict(
-            best_model, dataloaders=prediction_dataloader, return_predictions=False
-        )
-
-        result = pandas_prediction_callback.get_result()
-        recommendations = self.tokenizer.query_and_item_id_encoder.inverse_transform(
-            result
-        )
-        test_metrics = self.calculate_metrics(recommendations, self.raw_test_gt)
-        logging.info(test_metrics)
-        test_metrics.to_csv(
-            os.path.join(
-                self.config["paths"]["results_dir"],
-                f"{self.model_save_name}_{self.dataset_name}_test_metrics.csv",
-            ),
-        )
-
+                                # end launch_number - add line to scv
+                                    
+                                except RuntimeError as error_message:
+                                    if str(error_message).startswith('CUDA out of memory.'):
+                                        self.logger.info(f"Can not run: {batch_size=}, {loss_sample_count=}, {max_seq_len=}\n{error_message}")
+                                    else:
+                                        self.logger.info(f"Can not run: {batch_size=}, {loss_sample_count=}, {max_seq_len=}\n{error_message}")
+                                        with open(self.log_dir / f"RuntimeError {self.model_save_name}.txt", 'w') as file:
+                                            file.write(str(error_message))
+                                                    
+                            # end loss_sample_count
+                        # end max_model_seq_len
+                    # end batch_size

@@ -15,6 +15,7 @@ paths:
   log_dir: "replay_benchmarks/artifacts/logs/"
   checkpoint_dir: "replay_benchmarks/artifacts/checkpoints/"
   results_dir: "replay_benchmarks/artifacts/results/"
+  main_csv_res_dir: "replay_benchmarks/artifacts"
 
 metrics:
   types:
