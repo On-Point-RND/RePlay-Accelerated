@@ -10,6 +10,7 @@ from replay.models.nn.optimizer_utils import FatOptimizerFactory, LRSchedulerFac
 from .dataset import SasRecPredictionBatch, SasRecTrainingBatch, SasRecValidationBatch
 from .model import SasRecModel
 
+from replay.models.nn.optimizer_utils import LigerFusedLinearCrossEntropyFunction
 
 class SasRec(lightning.LightningModule):
     """
@@ -212,6 +213,8 @@ class SasRec(lightning.LightningModule):
             loss_func = self._compute_loss_scalable_ce
         elif self._loss_type == "CE_restricted":
             loss_func = self._compute_loss_ce_restricted
+        elif self._loss_type == "fused_linear_CE":
+            loss_func = self._compute_loss_fused_linear_CE
         else:
             msg = f"Not supported loss type: {self._loss_type}"
             raise ValueError(msg)
@@ -396,6 +399,27 @@ class SasRec(lightning.LightningModule):
 
         return loss
 
+    def _compute_loss_fused_linear_CE(
+        self,
+        feature_tensors: TensorMap,
+        positive_labels: torch.LongTensor,
+        padding_mask: torch.BoolTensor,
+        target_padding_mask: torch.BoolTensor
+    ) -> torch.Tensor:
+
+        output_emb = self._model.forward_step(feature_tensors, padding_mask)[target_padding_mask]
+        positive_labels = cast(
+            torch.LongTensor, torch.masked_select(positive_labels, target_padding_mask)
+        )
+
+        loss = self._loss.apply(
+            output_emb.view(-1, self._model.hidden_size),
+            self._model._head._item_embedder.get_all_item_weights(),
+            positive_labels
+        )
+
+        return loss
+
     def _get_sampled_logits(
         self,
         feature_tensors: TensorMap,
@@ -528,6 +552,9 @@ class SasRec(lightning.LightningModule):
 
         if self._loss_type == "CE" or self._loss_type == "SCE" or self._loss_type == "CE_restricted":
             return torch.nn.CrossEntropyLoss()
+
+        if self._loss_type == "fused_linear_CE":
+            return LigerFusedLinearCrossEntropyFunction()
 
         msg = "Not supported loss_type"
         raise NotImplementedError(msg)
