@@ -12,6 +12,19 @@ from .model import SasRecModel
 
 from replay.models.nn.optimizer_utils import LigerFusedLinearCrossEntropyFunction
 
+from cut_cross_entropy.cce import CCEParams, LinearCrossEntropyFunction, _build_flat_valids
+from cut_cross_entropy.cce_backward import cce_backward_kernel
+from cut_cross_entropy.cce_lse_forward import cce_lse_forward_kernel
+from cut_cross_entropy.constants import IGNORE_INDEX
+from cut_cross_entropy.doc import CCE_OPTS_DOC, LINEAR_CROSS_ENTROPY_DOC, add_doc_start
+from cut_cross_entropy.indexed_dot import indexed_neg_dot_forward_kernel
+from cut_cross_entropy.utils import (
+    _build_flat_valids,
+    _handle_eps,
+    handle_reduction_none,
+)
+
+
 class SasRec(lightning.LightningModule):
     """
     SASRec Lightning module.
@@ -215,6 +228,8 @@ class SasRec(lightning.LightningModule):
             loss_func = self._compute_loss_ce_restricted
         elif self._loss_type == "fused_linear_CE":
             loss_func = self._compute_loss_fused_linear_CE
+        elif self._loss_type == "CCE":
+            loss_func = self._compute_loss_cce
         else:
             msg = f"Not supported loss type: {self._loss_type}"
             raise ValueError(msg)
@@ -420,6 +435,77 @@ class SasRec(lightning.LightningModule):
 
         return loss
 
+    def _compute_loss_cce(
+        self,
+        feature_tensors: TensorMap,
+        positive_labels: torch.LongTensor,
+        padding_mask: torch.BoolTensor,
+        target_padding_mask: torch.BoolTensor
+    ) -> torch.Tensor:
+
+        bias = None
+        ignore_index = -100
+        softcap = None
+        reduction = "mean"
+        shift = True
+        filter_eps = "auto"
+        use_kahan = False
+
+        e = self._model.forward_step(feature_tensors, padding_mask)
+        e = e.to(torch.bfloat16)
+        targets = positive_labels
+        c = self._model._head._item_embedder.get_all_item_weights()
+
+        assert e.size()[0:-1] == targets.size()
+        assert e.size(-1) == c.size(1)
+        if not torch.cuda.is_bf16_supported():
+            raise RuntimeError(
+                "Cut Cross Entropy requires an ampere GPU or newer. "
+                "Consider using torch_compile_linear_cross_entropy for scenarios where one is not available."
+            )
+
+        batch_shape = targets.size()
+
+        shift = int(shift)
+        valids = _build_flat_valids(targets, ignore_index, shift)
+        
+        e = e.flatten(0, -2)
+        targets = targets.flatten()
+
+        if (targets.data_ptr() % 16) != 0:
+            targets = torch.nn.functional.pad(targets, (0, 1))[:-1]
+
+        assert (targets.data_ptr() % 16) == 0
+
+        params = CCEParams(
+            targets,
+            valids,
+            softcap,
+            reduction,
+            _handle_eps(filter_eps, e.dtype),
+            shift,
+            batch_shape,
+            use_kahan,
+        ) 
+
+        loss = self._loss.apply(e, c.to(torch.bfloat16), bias, params)
+
+        assert isinstance(loss, torch.Tensor)
+
+
+        # positive_labels = cast(
+        #     torch.LongTensor, torch.masked_select(positive_labels, target_padding_mask)
+        # )
+
+
+        # loss = self._loss.apply(
+        #     output_emb.view(-1, self._model.hidden_size),
+        #     self._model._head._item_embedder.get_all_item_weights(),
+        #     positive_labels
+        # )
+
+        return loss
+
     def _get_sampled_logits(
         self,
         feature_tensors: TensorMap,
@@ -555,6 +641,9 @@ class SasRec(lightning.LightningModule):
 
         if self._loss_type == "fused_linear_CE":
             return LigerFusedLinearCrossEntropyFunction()
+
+        if self._loss_type == "CCE":
+            return LinearCrossEntropyFunction()
 
         msg = "Not supported loss_type"
         raise NotImplementedError(msg)
