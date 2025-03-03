@@ -447,7 +447,7 @@ class SasRec(lightning.LightningModule):
         ignore_index = -100
         softcap = None
         reduction = "mean"
-        shift = True
+        shift = False
         filter_eps = "auto"
         use_kahan = False
 
