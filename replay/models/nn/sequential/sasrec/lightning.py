@@ -12,6 +12,9 @@ from .model import SasRecModel
 
 from replay.models.nn.optimizer_utils import LigerFusedLinearCrossEntropyFunction
 
+import sys
+sys.path.append("/home/jovyan/zhmax/cce_loss/")
+
 from cut_cross_entropy.cce import CCEParams, LinearCrossEntropyFunction, _build_flat_valids
 from cut_cross_entropy.cce_backward import cce_backward_kernel
 from cut_cross_entropy.cce_lse_forward import cce_lse_forward_kernel
@@ -447,7 +450,7 @@ class SasRec(lightning.LightningModule):
         ignore_index = -100
         softcap = None
         reduction = "mean"
-        shift = True
+        shift = False
         filter_eps = "auto"
         use_kahan = False
 
