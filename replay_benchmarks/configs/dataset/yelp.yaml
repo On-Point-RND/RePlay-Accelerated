@@ -1,6 +1,6 @@
 dataset:
-  name: movielens_1m
-  path: "./replay_benchmarks/data/movielens_1m"
+  name: yelp
+  path: "./replay_benchmarks/data/yelp"
 
   feature_schema:
     query_column: "user_id"

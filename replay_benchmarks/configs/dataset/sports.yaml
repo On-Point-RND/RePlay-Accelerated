@@ -1,6 +1,6 @@
 dataset:
-  name: movielens_1m
-  path: "./replay_benchmarks/data/movielens_1m"
+  name: sports
+  path: "./replay_benchmarks/data/sports"
 
   feature_schema:
     query_column: "user_id"

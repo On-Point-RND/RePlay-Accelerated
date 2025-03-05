@@ -1,26 +1,27 @@
 import logging
 import os
-import yaml
+import json
+import pickle
 from pathlib import Path
-from datetime import datetime
+
 import contextlib
 import sys
 import glob
 import re
 
+import optuna
 import torch
 import numpy as np
 import pandas as pd
-from replay_benchmarks.utils.conf import seed_everything
 
 import lightning as L
-from lightning.pytorch.profilers import SimpleProfiler
 from lightning.pytorch.loggers import CSVLogger, TensorBoardLogger
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from lightning.pytorch.profilers import SimpleProfiler
 from torch.utils.data import DataLoader
 from torch.profiler import profile, ProfilerActivity
 
+from replay_benchmarks.utils.conf import seed_everything
 from replay_benchmarks.base_runner import BaseRunner
 from replay.metrics import (
     OfflineMetrics,
@@ -31,6 +32,7 @@ from replay.metrics import (
     HitRate,
     MRR,
     Coverage,
+    Surprisal,
 )
 from replay.metrics.torch_metrics_builder import metrics_to_df
 from replay.models.nn.sequential import SasRec, Bert4Rec
@@ -52,7 +54,7 @@ from replay.models.nn.sequential.bert4rec import (
 )
 
 
-class ExperimentRunner(BaseRunner):
+class GridParamsSearchRunner(BaseRunner):
     def __init__(self, config):
         super().__init__(config)
         self.item_count = None
@@ -60,9 +62,12 @@ class ExperimentRunner(BaseRunner):
         self.seq_val_dataset = None
         self.seq_test_dataset = None
 
+        # Loggers
         self.log_dir = Path(config["paths"]["log_dir"]) / self.dataset_name / self.model_save_name
         self.csv_logger = CSVLogger(save_dir=self.log_dir / "csv_logs")
         self.tb_logger = TensorBoardLogger(save_dir=self.log_dir / "tb_logs")
+
+        self.results_csv_path = Path(self.config["paths"]["main_csv_res_dir"]) / "results.csv"
 
         # self._check_paths()
 
@@ -79,50 +84,45 @@ class ExperimentRunner(BaseRunner):
         for path in additional_paths:
             Path(path).mkdir(parents=True, exist_ok=True)
 
-
-    def _initialize_model(self):
-        """Initialize the model based on the configuration."""
+    def _initialize_model(self, trial=None):
+        """Initialize the model based on configuration or Optuna trial parameters."""
         model_config = {
             "tensor_schema": self.tensor_schema,
-            "optimizer_factory": FatOptimizerFactory(
-                learning_rate=self.model_cfg["training_params"]["learning_rate"]
-            ),
         }
+
+        if trial:
+            search_space = self.config["optuna"]["search_space"][self.model_name]
+
+            model_config.update({
+                "block_count": trial.suggest_categorical("block_count", search_space["block_count"]),
+                "head_count": trial.suggest_categorical("head_count", search_space["head_count"]),
+                "hidden_size": trial.suggest_categorical("hidden_size", search_space["hidden_size"]),
+                "max_seq_len": trial.suggest_categorical("max_seq_len", search_space["max_seq_len"]),
+                "dropout_rate": trial.suggest_float("dropout_rate", float(min(search_space["dropout_rate"])), float(max(search_space["dropout_rate"])), step=0.05),
+                "loss_type": trial.suggest_categorical("loss_type", search_space["loss_type"]),
+            })
+
+            optimizer_factory = FatOptimizerFactory(
+                learning_rate=trial.suggest_float("learning_rate", float(min(search_space["learning_rate"])), float(max(search_space["learning_rate"])), log=True),
+                weight_decay=trial.suggest_float("weight_decay", float(min(search_space["weight_decay"])), float(max(search_space["weight_decay"])), log=True),
+            )
+        else:
+            optimizer_factory = FatOptimizerFactory(
+                learning_rate=self.model_cfg["training_params"]["learning_rate"],
+                weight_decay=self.model_cfg["training_params"].get("weight_decay", 0.0),
+            )
+
         model_config.update(self.model_cfg["model_params"])
 
         if "sasrec" in self.model_name.lower():
-            return SasRec(**model_config)
+            return SasRec(**model_config, optimizer_factory=optimizer_factory)
         elif "bert4rec" in self.model_name.lower():
             if self.config.get("acceleration"):
                 if self.config["acceleration"].get("model"):
                     model_config.update(self.config["acceleration"]["model"])
-            return Bert4Rec(**model_config)
+            return Bert4Rec(**model_config, optimizer_factory=optimizer_factory)
         else:
             raise ValueError(f"Unsupported model type: {self.model_name}")
-
-    def _setup_logger(self):
-        """Set up the logger to write to a file."""
-        logger = logging.getLogger('ExperimentRunner')
-
-        for handler in logger.handlers[:]:
-            logger.removeHandler(handler)
-
-        logger.setLevel(logging.INFO)
-
-        fh = logging.FileHandler(self.log_dir / 'experiment.log')
-        fh.setLevel(logging.INFO)
-
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.ERROR)
-
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        fh.setFormatter(formatter)
-        ch.setFormatter(formatter)
-
-        logger.addHandler(fh)
-        logger.addHandler(ch)
-
-        return logger
 
     def _prepare_dataloaders(
         self,
@@ -177,6 +177,13 @@ class ExperimentRunner(BaseRunner):
             ),
             **common_params,
         )
+        val_pred_dataloader = DataLoader(
+            dataset=PredictionDataset(
+                seq_validation_dataset,
+                max_sequence_length=self.model_cfg["model_params"]["max_seq_len"],
+            ),
+            **common_params,
+        )
         prediction_dataloader = DataLoader(
             dataset=PredictionDataset(
                 seq_test_dataset,
@@ -185,7 +192,7 @@ class ExperimentRunner(BaseRunner):
             **common_params,
         )
 
-        return train_dataloader, val_dataloader, prediction_dataloader
+        return train_dataloader, val_dataloader, val_pred_dataloader, prediction_dataloader
 
     def _load_dataloaders(self):
         """Loads data and prepares dataloaders."""
@@ -193,6 +200,8 @@ class ExperimentRunner(BaseRunner):
         train_events, validation_events, validation_gt, test_events, test_gt = (
             self.load_data()
         )
+        self.validation_gt = validation_gt
+        self.test_events = test_events
         self.raw_test_gt = test_gt
 
         train_dataset, val_dataset, val_gt_dataset, test_dataset, test_gt_dataset = (
@@ -220,10 +229,10 @@ class ExperimentRunner(BaseRunner):
             seq_test_dataset,
         )
 
-    def calculate_metrics(self, predictions, ground_truth):
+    def calculate_metrics(self, predictions, ground_truth, test_events=None):
         """Calculate and return the desired metrics based on the predictions."""
         top_k = self.config["metrics"]["ks"]
-        metrics_list = [
+        base_metrics = [
             Recall(top_k),
             Precision(top_k),
             MAP(top_k),
@@ -231,10 +240,24 @@ class ExperimentRunner(BaseRunner):
             MRR(top_k),
             HitRate(top_k),
         ]
-        metrics = OfflineMetrics(
-            metrics_list, query_column="user_id", rating_column="score"
-        )(predictions, ground_truth)
-        return metrics_to_df(metrics)
+
+        diversity_metrics = []
+        if test_events is not None:
+            diversity_metrics = [
+                Coverage(top_k),
+                Surprisal(top_k),
+            ]
+
+        all_metrics = base_metrics + diversity_metrics
+        metrics_results = OfflineMetrics(
+            all_metrics, query_column="user_id", rating_column="score"
+        )(
+            predictions,
+            ground_truth,
+            test_events,
+        )
+        
+        return metrics_to_df(metrics_results)
 
     def save_model(self, trainer, best_model):
         """Save the best model checkpoint to the specified directory."""
@@ -260,8 +283,6 @@ class ExperimentRunner(BaseRunner):
         self.batch_size_list = self.config["mode"]["batch_size"]
         self.max_seq_len = self.config["mode"]["max_seq_len"]
         self.number_launches = self.config["mode"]["number_launches"]
-
-        self.dataset_seq_len = self.config['dataset']['seq_len'] 
   
         if(self.model_cfg["model_params"]["loss_type"]=='SCE'):
             self.loss_sample_count_list = self.config["mode"]["bucket_size_y"]
@@ -295,8 +316,12 @@ class ExperimentRunner(BaseRunner):
         self.logger.info(f"Allocated memory: {allocated} GB")
         self.logger.info(f"Max allocated memory: {max_allocated} GB")
 
-    def _run_one_launch(self, indeces, train_dataloader, val_dataloader, prediction_dataloader):
+
+    def _run_one_launch(self, indeces, train_dataloader, val_dataloader, val_pred_dataloader, prediction_dataloader):
+
+        self.logger.info("Initializing model...")
         model = self._initialize_model()
+
         checkpoint_callback = ModelCheckpoint(
             dirpath=os.path.join(
                 self.config["paths"]["checkpoint_dir"],
@@ -329,11 +354,13 @@ class ExperimentRunner(BaseRunner):
             max_epochs=self.model_cfg["training_params"]["max_epochs"],
             callbacks=[checkpoint_callback, early_stopping, validation_metrics_callback],
             logger=[self.csv_logger, self.tb_logger],
+            profiler=profiler,
             precision=self.model_cfg["training_params"]["precision"],
-            devices=self.devices,
-            profiler=profiler
+            devices=self.devices
         )
 
+        self.logger.info("Starting training...")
+        
         trainer.fit(model, train_dataloader, val_dataloader)
         self._save_allocated_memory()
 
@@ -343,6 +370,37 @@ class ExperimentRunner(BaseRunner):
             best_model = Bert4Rec.load_from_checkpoint(checkpoint_callback.best_model_path)
         self.save_model(trainer, best_model)
 
+        self.logger.info("Evaluating on val set...")
+        pandas_prediction_callback = PandasPredictionCallback(
+            top_k=max(self.config["metrics"]["ks"]),
+            query_column="user_id",
+            item_column="item_id",
+            rating_column="score",
+            postprocessors=[RemoveSeenItems(self.seq_val_dataset)],
+        )
+        L.Trainer(callbacks=[pandas_prediction_callback], precision=self.model_cfg["training_params"]["precision"], inference_mode=True, devices=self.devices).predict(
+            best_model, dataloaders=val_pred_dataloader, return_predictions=False
+        )
+
+        result = pandas_prediction_callback.get_result()
+        recommendations = self.tokenizer.query_and_item_id_encoder.inverse_transform(
+            result
+        )
+        val_metrics = self.calculate_metrics(recommendations, self.validation_gt)
+        self.logger.info(val_metrics)
+        recommendations.to_parquet(
+            os.path.join(
+                self.res_dir,
+                f"val_preds.parquet",
+            ),
+        )
+        val_metrics.to_csv(
+            os.path.join(
+                self.res_dir,
+                f"val_metrics.csv",
+            ),
+        )
+
         self.logger.info("Evaluating on test set...")
         pandas_prediction_callback = PandasPredictionCallback(
             top_k=max(self.config["metrics"]["ks"]),
@@ -351,8 +409,7 @@ class ExperimentRunner(BaseRunner):
             rating_column="score",
             postprocessors=[RemoveSeenItems(self.seq_test_dataset)],
         )
-        
-        L.Trainer(callbacks=[pandas_prediction_callback], precision=self.model_cfg["training_params"]["precision"], inference_mode=True, devices=self.devices).predict(
+        L.Trainer(callbacks=[pandas_prediction_callback], inference_mode=True, devices=self.devices).predict(
             best_model, dataloaders=prediction_dataloader, return_predictions=False
         )
 
@@ -360,18 +417,45 @@ class ExperimentRunner(BaseRunner):
         recommendations = self.tokenizer.query_and_item_id_encoder.inverse_transform(
             result
         )
-
-        test_metrics = self.calculate_metrics(recommendations, self.raw_test_gt)
+        test_metrics = self.calculate_metrics(recommendations, self.raw_test_gt, self.test_events)
         self.logger.info(test_metrics)
-        test_metrics.to_csv(
+        recommendations.to_parquet(
+            os.path.join(
+                self.res_dir,
+                f"test_preds.parquet",
+            ),
+        )
+        test_metrics.to_csv(            
             os.path.join(
                 self.res_dir,
                 f"test_metrics.csv",
             ),
         )
 
-        # self._save_all_launches_metrics(indeces, test_metrics['10']['NDCG'])
-    
+    def _setup_logger(self):
+        """Set up the logger to write to a file."""
+        logger = logging.getLogger('ExperimentRunner')
+
+        for handler in logger.handlers[:]:
+            logger.removeHandler(handler)
+
+        logger.setLevel(logging.INFO)
+
+        fh = logging.FileHandler(self.log_dir / 'experiment.log')
+        fh.setLevel(logging.INFO)
+
+        ch = logging.StreamHandler()
+        ch.setLevel(logging.ERROR)
+
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        fh.setFormatter(formatter)
+        ch.setFormatter(formatter)
+
+        logger.addHandler(fh)
+        logger.addHandler(ch)
+
+        return logger
+
     def generate_csv_res(self, additional_rows_dict):
 
         def find_latest_version_path(base_path):
@@ -385,7 +469,6 @@ class ExperimentRunner(BaseRunner):
         simple_profiler_path = find_latest_version_path(self.log_dir / "csv_logs/lightning_logs") / "fit-simple_profiler.txt"
         memory_results = pd.read_csv(self.res_dir / "memory_stats.csv")
         test_metrics = pd.read_csv(self.res_dir / "test_metrics.csv")
-        results_csv_path = Path(self.config["paths"]["main_csv_res_dir"]) / "results.csv"
 
         last_row = train_metrics_logs.iloc[-1]
         second_last_row = train_metrics_logs.iloc[-2]
@@ -429,10 +512,11 @@ class ExperimentRunner(BaseRunner):
         combined_row_df = pd.DataFrame(combined_row).T
         combined_row_df
 
-        if not pd.io.common.file_exists(results_csv_path):
-            combined_row_df.to_csv(results_csv_path, index=False)
+        if not pd.io.common.file_exists(self.results_csv_path):
+            combined_row_df.to_csv(self.results_csv_path, index=False)
         else:
-            combined_row_df.to_csv(results_csv_path, mode='a', header=False, index=False)
+            combined_row_df.to_csv(self.results_csv_path, mode='a', header=False, index=False)
+
 
     def run(self):
 
@@ -444,8 +528,8 @@ class ExperimentRunner(BaseRunner):
             for max_seq_len_i, max_seq_len in enumerate(self.max_seq_len): 
                 self.model_cfg["model_params"]["max_seq_len"] = max_seq_len 
                 
-                train_dataloader, val_dataloader, prediction_dataloader = (
-                    self._load_dataloaders()
+                train_dataloader, val_dataloader, val_pred_dataloader, prediction_dataloader = (
+                self._load_dataloaders()
                 )
 
                 for sample_count_i, loss_sample_count in enumerate(self.loss_sample_count_list):
@@ -480,12 +564,26 @@ class ExperimentRunner(BaseRunner):
                                     self.logger.info(f"max_model_seq_len = {max_seq_len}")
                                     self.logger.info(f"random seed = {new_seed}")
 
+                                    # Check if the configuration already exists in results.csv
+                                    if self.results_csv_path.exists():
+                                        results_df = pd.read_csv(self.results_csv_path)
+                                        existing_row = results_df[
+                                            (results_df['batch_size'] == batch_size) &
+                                            (results_df['loss_sample_count'] == loss_sample_count) &
+                                            (results_df['max_seq_len'] == max_seq_len) &
+                                            (results_df['seed'] == new_seed)
+                                        ]
+                                        if not existing_row.empty:
+                                            self.logger.info(f"Configuration already exists in results.csv. Skipping.")
+                                            continue
                                 
                                     ### main train launch ###
                                     self._run_one_launch(indeces=(batch_size_i, sample_count_i, max_seq_len_i),
                                                             train_dataloader=train_dataloader, 
-                                                            val_dataloader=val_dataloader,
-                                                            prediction_dataloader=prediction_dataloader)
+                                                            val_dataloader=val_dataloader, 
+                                                            val_pred_dataloader=val_pred_dataloader, 
+                                                            prediction_dataloader=prediction_dataloader
+                                                            )
                                     #########################
                                     
                                     add_info = {

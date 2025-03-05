@@ -11,11 +11,15 @@ model:
       dropout_rate: 0.15
       loss_type: CE # CE, BCE, SCE
       loss_sample_count: Null
+      n_buckets: 443
+      bucket_size_x: 443
+      bucket_size_y: 512
+      mix_x: true
     training_params:
       embedding_dim: 312
       learning_rate: 0.002
-      batch_size: 512
+      batch_size: 32
       num_workers: 4
-      patience: 10
-      max_epochs: 100
-      precision: null #default 32, bf16-mixed
+      patience: 4
+      max_epochs: 20
+      precision: bf16-mixed
