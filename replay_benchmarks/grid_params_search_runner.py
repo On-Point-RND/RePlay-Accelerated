@@ -470,21 +470,21 @@ class GridParamsSearchRunner(BaseRunner):
         memory_results = pd.read_csv(self.res_dir / "memory_stats.csv")
         test_metrics = pd.read_csv(self.res_dir / "test_metrics.csv")
 
-        last_row = train_metrics_logs.iloc[-1]
-        second_last_row = train_metrics_logs.iloc[-2]
-        last_row_cleaned = last_row.dropna()
-        second_last_row_cleaned = second_last_row.dropna()
-        combined_row = pd.concat([second_last_row_cleaned, last_row_cleaned])
-        combined_row = combined_row.drop_duplicates()
-        combined_row = combined_row.add_suffix('_val')
+        combined_row = {}
 
         train_loss_epoch = np.round(train_metrics_logs['train_loss_epoch'].dropna().tolist(), 3)
         train_loss_step = np.round(train_metrics_logs['train_loss_step'].dropna().tolist(), 3)
         train_loss_epoch_str = ' '.join(map(str, train_loss_epoch))
         train_loss_step_str = ' '.join(map(str, train_loss_step))
-        combined_row_str = ' '.join(combined_row.astype(str)) + ' ' + train_loss_epoch_str + ' ' + train_loss_step_str
-        combined_row['train_loss_epoch_val'] = train_loss_epoch_str
-        combined_row['train_loss_step_val'] = train_loss_step_str
+        
+        print(train_metrics_logs)
+
+        print(train_loss_epoch)
+        
+        print(train_loss_step)
+
+        combined_row['train_loss_epoch_val'] = train_loss_epoch_str if train_loss_epoch_str else "null"
+        combined_row['train_loss_step_val'] = train_loss_step_str if train_loss_step_str else "null"
 
         with open(simple_profiler_path, 'r') as file:
             content = file.read()
@@ -509,8 +509,12 @@ class GridParamsSearchRunner(BaseRunner):
         for key, value in additional_rows_dict.items():
             combined_row[key] = value
 
-        combined_row_df = pd.DataFrame(combined_row).T
-        combined_row_df
+        print(combined_row)
+
+        combined_row_df = pd.DataFrame([combined_row])
+
+        print(combined_row_df)
+        print(combined_row_df.columns)
 
         if not pd.io.common.file_exists(self.results_csv_path):
             combined_row_df.to_csv(self.results_csv_path, index=False)
