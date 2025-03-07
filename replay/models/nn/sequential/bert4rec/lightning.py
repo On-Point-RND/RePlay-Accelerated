@@ -35,6 +35,7 @@ class Bert4Rec(lightning.LightningModule):
         bucket_size_x: int = 100,
         bucket_size_y: int = 100,
         mix_x: bool = False,
+        restrict_items: bool = False,
         optimizer_factory: OptimizerFactory = FatOptimizerFactory(),
         lr_scheduler_factory: Optional[LRSchedulerFactory] = None,
         acceleration_config: Optional[dict] = None
@@ -121,6 +122,7 @@ class Bert4Rec(lightning.LightningModule):
         self._bucket_size_x = bucket_size_x
         self._bucket_size_y = bucket_size_y
         self._mix_x = mix_x
+        self._restrict_items = restrict_items
         assert negative_sampling_strategy in {"global_uniform", "inbatch"}
 
         item_count = tensor_schema.item_id_features.item().cardinality

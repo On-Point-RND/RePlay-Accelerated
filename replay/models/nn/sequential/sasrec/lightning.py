@@ -461,6 +461,7 @@ class SasRec(lightning.LightningModule):
         shift = False
         filter_eps = "auto"
         use_kahan = False
+        item_emb_mask = None
 
         e = self._model.forward_step(feature_tensors, padding_mask)
         e = e.to(torch.bfloat16)
@@ -488,6 +489,31 @@ class SasRec(lightning.LightningModule):
 
         assert (targets.data_ptr() % 16) == 0
 
+        if self._loss_sample_count is not None:
+            n_negative_samples = self._loss_sample_count
+            vocab_size = self._vocab_size
+            device = padding_mask.device
+
+            e = e[target_padding_mask]
+            positive_labels = cast(
+                torch.LongTensor, torch.masked_select(positive_labels, target_padding_mask)
+            )  # (masked_batch_seq_size,)
+            masked_batch_seq_size = positive_labels.size(0)
+
+            negative_labels = torch.randint(
+                low=0,
+                high=vocab_size,
+                size=(masked_batch_seq_size, n_negative_samples),
+                dtype=torch.long,
+                device=device,
+            )
+            
+            item_labels = torch.hstack([positive_labels, negative_labels])
+
+
+            item_emb_mask = torch.zeros_like(c, dtype=torch.bool)
+            item_emb_mask[item_labels] = True
+            
         params = CCEParams(
             targets,
             valids,
@@ -498,8 +524,8 @@ class SasRec(lightning.LightningModule):
             batch_shape,
             use_kahan,
         ) 
-
-        loss = self._loss.apply(e, c.to(torch.bfloat16), bias, params)
+  
+        loss = self._loss.apply(e, c.to(e.dtype), bias, item_emb_mask, params)
 
         assert isinstance(loss, torch.Tensor)
 
