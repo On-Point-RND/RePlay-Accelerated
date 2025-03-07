@@ -353,13 +353,17 @@ class SasRec(lightning.LightningModule):
         target_padding_mask: torch.BoolTensor,
     ) -> torch.Tensor:
 
-        pad_token = feature_tensors[self._schema.item_id_feature_name].view(-1)[~padding_mask.view(-1)][0]
-        emb = self._model.forward_step(feature_tensors, padding_mask)[target_padding_mask]
+        # pad_token = feature_tensors[self._schema.item_id_feature_name].view(-1)[~padding_mask.view(-1)][0]
+        pad_token = self._model._head._item_embedder.item_emb.padding_idx - 1
+        # emb = self._model.forward_step(feature_tensors, padding_mask)[target_padding_mask]
+        emb = self._model.forward_step(feature_tensors, padding_mask)
         hd = torch.tensor(emb.shape[-1])
 
         x = emb.view(-1, hd)
-        y = positive_labels[target_padding_mask].view(-1)
+        # y = positive_labels[target_padding_mask].view(-1)
+        y = positive_labels.view(-1)
         w = self.get_all_embeddings()["item_embedding"]
+        
 
         correct_class_logits_ = (x * torch.index_select(w, dim=0, index=y)).sum(dim=1) # (bs,)
 
@@ -373,7 +377,8 @@ class SasRec(lightning.LightningModule):
 
         with torch.no_grad():
             x_bucket = buckets @ x.T # (n_b, hd) x (hd, b) -> (n_b, b)
-            x_bucket[:, ~padding_mask[target_padding_mask].view(-1)] = float('-inf')
+            # x_bucket[:, ~padding_mask[target_padding_mask].view(-1)] = float('-inf')
+            x_bucket[:, ~target_padding_mask.view(-1)] = float('-inf')
             _, top_x_bucket = torch.topk(x_bucket, dim=1, k=self._bucket_size_x) # (n_b, bs_x)
             del x_bucket
 
@@ -459,6 +464,7 @@ class SasRec(lightning.LightningModule):
         shift = False
         filter_eps = "auto"
         use_kahan = False
+        item_emb_mask = None
 
         # e = self._model.forward_step(feature_tensors, padding_mask)
         # e = e.to(torch.bfloat16)
@@ -498,6 +504,31 @@ class SasRec(lightning.LightningModule):
 
         assert (targets.data_ptr() % 16) == 0
 
+        if self._loss_sample_count is not None:
+            n_negative_samples = self._loss_sample_count
+            vocab_size = self._vocab_size
+            device = padding_mask.device
+
+            e = e[target_padding_mask]
+            positive_labels = cast(
+                torch.LongTensor, torch.masked_select(positive_labels, target_padding_mask)
+            )  # (masked_batch_seq_size,)
+            masked_batch_seq_size = positive_labels.size(0)
+
+            negative_labels = torch.randint(
+                low=0,
+                high=vocab_size,
+                size=(masked_batch_seq_size, n_negative_samples),
+                dtype=torch.long,
+                device=device,
+            )
+            
+            item_labels = torch.hstack([positive_labels, negative_labels])
+
+
+            item_emb_mask = torch.zeros_like(c, dtype=torch.bool)
+            item_emb_mask[item_labels] = True
+            
         params = CCEParams(
             targets,
             valids,
@@ -508,8 +539,8 @@ class SasRec(lightning.LightningModule):
             batch_shape,
             use_kahan,
         ) 
-
-        loss = self._loss.apply(e, c.to(e.dtype), bias, params)
+  
+        loss = self._loss.apply(e, c.to(e.dtype), bias, item_emb_mask, params)
 
         assert isinstance(loss, torch.Tensor)
 
