@@ -13,16 +13,16 @@ import torch.nn as nn
 from replay.data.nn import TensorFeatureInfo, TensorMap, TensorSchema
 
 
-from bnbtriton.quantize_rowwise import quantize_rowwise
-from bnbtriton.int8_matmul_rowwise_dequantize import int8_matmul_rowwise_dequantize
-from bnbtriton.triton_utils import is_triton_available
+# from bnbtriton.quantize_rowwise import quantize_rowwise
+# from bnbtriton.int8_matmul_rowwise_dequantize import int8_matmul_rowwise_dequantize
+# from bnbtriton.triton_utils import is_triton_available
 
-from bnbtriton.quantize_rowwise_bf16 import quantize_rowwise_bf16
-from bnbtriton.int8_matmul_rowwise_dequantize_bf16 import int8_matmul_rowwise_dequantize_bf16
+# from bnbtriton.quantize_rowwise_bf16 import quantize_rowwise_bf16
+# from bnbtriton.int8_matmul_rowwise_dequantize_bf16 import int8_matmul_rowwise_dequantize_bf16
 
-from bnbtriton.prune_rowwise import prune_rowwise
+# from bnbtriton.prune_rowwise import prune_rowwise
 
-from bnbtriton.fp16_matmul import fp16_matmul
+# from bnbtriton.fp16_matmul import fp16_matmul
 
 # import logging
 
