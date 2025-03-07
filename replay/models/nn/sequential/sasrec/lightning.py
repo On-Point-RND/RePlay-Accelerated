@@ -425,16 +425,16 @@ class SasRec(lightning.LightningModule):
         target_padding_mask: torch.BoolTensor
     ) -> torch.Tensor:
 
-        # output_emb = self._model.forward_step(feature_tensors, padding_mask)[target_padding_mask]
-        # positive_labels = cast(
-        #     torch.LongTensor, torch.masked_select(positive_labels, target_padding_mask)
-        # )
+        output_emb = self._model.forward_step(feature_tensors, padding_mask)[target_padding_mask]
+        positive_labels = cast(
+            torch.LongTensor, torch.masked_select(positive_labels, target_padding_mask)
+        )
 
-        output_emb = self._model.forward_step(feature_tensors, target_padding_mask)
-        output_emb = output_emb[:, :-1, :][target_padding_mask[:, :-1]]
+        # output_emb = self._model.forward_step(feature_tensors, target_padding_mask)
+        # output_emb = output_emb[:, :-1, :][target_padding_mask[:, :-1]]
 
-        padding_mask[:, 0] = False
-        positive_labels = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
+        # padding_mask[:, 0] = False
+        # positive_labels = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
 
         loss = self._loss.apply(
             output_emb.view(-1, self._model.hidden_size),
@@ -460,12 +460,24 @@ class SasRec(lightning.LightningModule):
         filter_eps = "auto"
         use_kahan = False
 
-        e = self._model.forward_step(feature_tensors, padding_mask)
-        e = e.to(torch.bfloat16)
-        targets = positive_labels
+        # e = self._model.forward_step(feature_tensors, padding_mask)
+        # e = e.to(torch.bfloat16)
+        # targets = positive_labels
+        # c = self._model._head._item_embedder.get_all_item_weights()
+
+        e = self._model.forward_step(feature_tensors, target_padding_mask)
+        e = e[:, :-1, :][target_padding_mask[:, :-1]]
+        
         c = self._model._head._item_embedder.get_all_item_weights()
 
-        assert e.size()[0:-1] == targets.size()
+        padding_mask[:, 0] = False
+        targets = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
+
+        e = e.contiguous()
+        e = e.to(torch.float16)
+        padding_mask = padding_mask.contiguous()
+
+        # assert e.size()[0:-1] == targets.size()
         assert e.size(-1) == c.size(1)
         if not torch.cuda.is_bf16_supported():
             raise RuntimeError(
@@ -497,7 +509,7 @@ class SasRec(lightning.LightningModule):
             use_kahan,
         ) 
 
-        loss = self._loss.apply(e, c.to(torch.bfloat16), bias, params)
+        loss = self._loss.apply(e, c.to(e.dtype), bias, params)
 
         assert isinstance(loss, torch.Tensor)
 
