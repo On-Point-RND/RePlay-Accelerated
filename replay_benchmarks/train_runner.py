@@ -170,6 +170,13 @@ class TrainRunner(BaseRunner):
             ),
             **common_params,
         )
+        val_pred_dataloader = DataLoader(
+            dataset=PredictionDataset(
+                seq_validation_dataset,
+                max_sequence_length=self.model_cfg["model_params"]["max_seq_len"],
+            ),
+            **common_params,
+        )
         prediction_dataloader = DataLoader(
             dataset=PredictionDataset(
                 seq_test_dataset,
@@ -184,6 +191,7 @@ class TrainRunner(BaseRunner):
             val_pred_dataloader,
             prediction_dataloader,
         )
+        return train_dataloader, val_dataloader, val_pred_dataloader, prediction_dataloader
 
     def _load_dataloaders(self):
         """Loads data and prepares dataloaders."""
@@ -193,6 +201,7 @@ class TrainRunner(BaseRunner):
         )
         self.validation_gt = validation_gt
         self.test_events = test_events
+        self.validation_gt = validation_gt
         self.raw_test_gt = test_gt
 
         (
@@ -383,120 +392,107 @@ class TrainRunner(BaseRunner):
                 postprocessors=[RemoveSeenItems(self.seq_val_dataset)],
             )
 
-            profiler = SimpleProfiler(
-                dirpath=self.csv_logger.log_dir, filename="simple_profiler"
-            )
+        profiler = SimpleProfiler(dirpath = self.csv_logger.log_dir, filename = 'simple_profiler')
 
-            devices = [int(self.config["env"]["CUDA_VISIBLE_DEVICES"])]
-            trainer = L.Trainer(
-                max_epochs=self.model_cfg["training_params"]["max_epochs"],
-                callbacks=[
-                    checkpoint_callback,
-                    early_stopping,
-                    validation_metrics_callback,
-                ],
-                logger=[self.csv_logger, self.tb_logger],
-                profiler=profiler,
-                precision=self.model_cfg["training_params"]["precision"],
-                devices=devices,
-            )
+        devices = [int(self.config["env"]["CUDA_VISIBLE_DEVICES"])]
+        trainer = L.Trainer(
+            max_epochs=self.model_cfg["training_params"]["max_epochs"],
+            callbacks=[checkpoint_callback, early_stopping, validation_metrics_callback],
+            logger=[self.csv_logger, self.tb_logger],
+            profiler=profiler,
+            precision=self.model_cfg["training_params"]["precision"],
+            devices=devices
+        )
 
-            logging.info("Starting training...")
-            if self.config["mode"]["profiler"]["enabled"]:
-                with profile(
-                    activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
-                    record_shapes=True,
-                    with_flops=True,
-                    profile_memory=True,
-                ) as prof:
-                    trainer.fit(model, train_dataloader, val_dataloader)
-                logging.info(
-                    prof.key_averages().table(
-                        sort_by="self_cuda_time_total",
-                        row_limit=self.config["mode"]["profiler"].get("row_limit", 10),
-                    )
-                )
-                prof.export_chrome_trace(
-                    os.path.join(
-                        self.config["paths"]["log_dir"],
-                        f"{self.model_save_name}_{self.dataset_name}_profile.json",
-                    )
-                )
-            else:
+        logging.info("Starting training...")
+        if self.config["mode"]["profiler"]["enabled"]:
+            with profile(
+                activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+                record_shapes=True,
+                with_flops=True,
+                profile_memory=True,
+            ) as prof:
                 trainer.fit(model, train_dataloader, val_dataloader)
-
-            if self.model_name.lower() == "sasrec":
-                best_model = SasRec.load_from_checkpoint(
-                    checkpoint_callback.best_model_path
+            logging.info(
+                prof.key_averages().table(
+                    sort_by="self_cuda_time_total",
+                    row_limit=self.config["mode"]["profiler"].get("row_limit", 10),
                 )
-            elif self.model_name.lower() == "bert4rec":
-                best_model = Bert4Rec.load_from_checkpoint(
-                    checkpoint_callback.best_model_path
+            )
+            prof.export_chrome_trace(
+                os.path.join(
+                    self.config["paths"]["log_dir"],
+                    f"{self.model_save_name}_{self.dataset_name}_profile.json",
                 )
-            self.save_model(trainer, best_model)
+            )
+        else:
+            trainer.fit(model, train_dataloader, val_dataloader)
 
-            logging.info("Evaluating on val set...")
-            pandas_prediction_callback = PandasPredictionCallback(
-                top_k=max(self.config["metrics"]["ks"]),
-                query_column="user_id",
-                item_column="item_id",
-                rating_column="score",
-                postprocessors=[RemoveSeenItems(self.seq_val_dataset)],
-            )
-            L.Trainer(
-                callbacks=[pandas_prediction_callback],
-                inference_mode=True,
-                devices=devices,
-            ).predict(
-                best_model, dataloaders=val_pred_dataloader, return_predictions=False
-            )
+        if self.model_name.lower() == "sasrec":
+            best_model = SasRec.load_from_checkpoint(checkpoint_callback.best_model_path)
+        elif self.model_name.lower() == "bert4rec":
+            best_model = Bert4Rec.load_from_checkpoint(checkpoint_callback.best_model_path)
+        self.save_model(trainer, best_model)
 
-            result = pandas_prediction_callback.get_result()
-            recommendations = (
-                self.tokenizer.query_and_item_id_encoder.inverse_transform(result)
-            )
-            val_metrics = self.calculate_metrics(recommendations, self.validation_gt)
-            logging.info(val_metrics)
-            recommendations.to_parquet(
-                os.path.join(
-                    self.config["paths"]["results_dir"],
-                    f"{self.model_save_name}_{self.dataset_name}_val_preds.parquet",
-                ),
-            )
-            val_metrics.to_csv(
-                os.path.join(
-                    self.config["paths"]["results_dir"],
-                    f"{self.model_save_name}_{self.dataset_name}_val_metrics.csv",
-                ),
-            )
+        logging.info("Evaluating on val set...")
+        pandas_prediction_callback = PandasPredictionCallback(
+            top_k=max(self.config["metrics"]["ks"]),
+            query_column="user_id",
+            item_column="item_id",
+            rating_column="score",
+            postprocessors=[RemoveSeenItems(self.seq_val_dataset)],
+        )
+        L.Trainer(callbacks=[pandas_prediction_callback], inference_mode=True, devices=devices).predict(
+            best_model, dataloaders=val_pred_dataloader, return_predictions=False
+        )
 
-            logging.info("Evaluating on test set...")
-            pandas_prediction_callback = PandasPredictionCallback(
-                top_k=max(self.config["metrics"]["ks"]),
-                query_column="user_id",
-                item_column="item_id",
-                rating_column="score",
-                postprocessors=[RemoveSeenItems(self.seq_test_dataset)],
-            )
-            L.Trainer(
-                callbacks=[pandas_prediction_callback],
-                inference_mode=True,
-                devices=devices,
-            ).predict(best_model, dataloaders=prediction_dataloader, return_predictions=False)
+        result = pandas_prediction_callback.get_result()
+        recommendations = self.tokenizer.query_and_item_id_encoder.inverse_transform(
+            result
+        )
+        val_metrics = self.calculate_metrics(recommendations, self.validation_gt)
+        logging.info(val_metrics)
+        recommendations.to_csv(
+            os.path.join(
+                self.config["paths"]["results_dir"],
+                f"{self.model_save_name}_{self.dataset_name}_val_preds.csv",
+            ),
+        )
+        val_metrics.to_csv(
+            os.path.join(
+                self.config["paths"]["results_dir"],
+                f"{self.model_save_name}_{self.dataset_name}_val_metrics.csv",
+            ),
+        )
 
-            result = pandas_prediction_callback.get_result()
-            recommendations = (self.tokenizer.query_and_item_id_encoder.inverse_transform(result))
-            test_metrics = self.calculate_metrics(recommendations, self.raw_test_gt, self.test_events)
-            logging.info(test_metrics)
-            recommendations.to_parquet(
-                os.path.join(
-                    self.config["paths"]["results_dir"],
-                    f"{self.model_save_name}_{self.dataset_name}_test_preds.parquet",
-                ),
-            )
-            test_metrics.to_csv(
-                os.path.join(
-                    self.config["paths"]["results_dir"],
-                    f"{self.model_save_name}_{self.dataset_name}_test_metrics.csv",
-                ),
-            )
+        logging.info("Evaluating on test set...")
+        pandas_prediction_callback = PandasPredictionCallback(
+            top_k=max(self.config["metrics"]["ks"]),
+            query_column="user_id",
+            item_column="item_id",
+            rating_column="score",
+            postprocessors=[RemoveSeenItems(self.seq_test_dataset)],
+        )
+        L.Trainer(callbacks=[pandas_prediction_callback], inference_mode=True, devices=devices).predict(
+            best_model, dataloaders=prediction_dataloader, return_predictions=False
+        )
+
+        result = pandas_prediction_callback.get_result()
+        recommendations = self.tokenizer.query_and_item_id_encoder.inverse_transform(
+            result
+        )
+        test_metrics = self.calculate_metrics(recommendations, self.raw_test_gt)
+        logging.info(test_metrics)
+        recommendations.to_csv(
+            os.path.join(
+                self.config["paths"]["results_dir"],
+                f"{self.model_save_name}_{self.dataset_name}_test_preds.csv",
+            ),
+        )
+        test_metrics.to_csv(
+            os.path.join(
+                self.config["paths"]["results_dir"],
+                f"{self.model_save_name}_{self.dataset_name}_test_metrics.csv",
+            ),
+        )
+

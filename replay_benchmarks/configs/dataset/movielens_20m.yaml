@@ -1,7 +1,6 @@
 dataset:
   name: movielens_20m
   path: "./replay_benchmarks/data/movielens_20m"
-  seq_len: 88
 
   feature_schema:
     query_column: "user_id"
@@ -12,6 +11,7 @@ dataset:
   preprocess:
     global_split_ratio: 0.1
     val_users_ratio: 0.05
+    max_num_test_interactions: Null
     min_users_per_item: 5
     min_items_per_user: 3
     min_rating: 3
