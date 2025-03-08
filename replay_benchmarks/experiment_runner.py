@@ -31,6 +31,7 @@ from replay.metrics import (
     HitRate,
     MRR,
     Coverage,
+    Surprisal,
 )
 from replay.metrics.torch_metrics_builder import metrics_to_df
 from replay.models.nn.sequential import SasRec, Bert4Rec
@@ -177,6 +178,13 @@ class ExperimentRunner(BaseRunner):
             ),
             **common_params,
         )
+        val_pred_dataloader = DataLoader(
+            dataset=PredictionDataset(
+                seq_validation_dataset,
+                max_sequence_length=self.model_cfg["model_params"]["max_seq_len"],
+            ),
+            **common_params,
+        )
         prediction_dataloader = DataLoader(
             dataset=PredictionDataset(
                 seq_test_dataset,
@@ -185,7 +193,12 @@ class ExperimentRunner(BaseRunner):
             **common_params,
         )
 
-        return train_dataloader, val_dataloader, prediction_dataloader
+        return (
+            train_dataloader,
+            val_dataloader,
+            val_pred_dataloader,
+            prediction_dataloader,
+        )
 
     def _load_dataloaders(self):
         """Loads data and prepares dataloaders."""
@@ -193,12 +206,19 @@ class ExperimentRunner(BaseRunner):
         train_events, validation_events, validation_gt, test_events, test_gt = (
             self.load_data()
         )
+        self.validation_gt = validation_gt
+        self.test_events = test_events
         self.raw_test_gt = test_gt
 
-        train_dataset, val_dataset, val_gt_dataset, test_dataset, test_gt_dataset = (
-            self.prepare_datasets(
-                train_events, validation_events, validation_gt, test_events, test_gt
-            )
+        (
+            train_dataset,
+            train_val_dataset,
+            val_dataset,
+            val_gt_dataset,
+            test_dataset,
+            test_gt_dataset,
+        ) = self.prepare_datasets(
+            train_events, validation_events, validation_gt, test_events, test_gt
         )
         self.item_count = train_dataset.item_count
 
@@ -208,7 +228,12 @@ class ExperimentRunner(BaseRunner):
             seq_validation_gt,
             seq_test_dataset,
         ) = self.prepare_seq_datasets(
-            train_dataset, val_dataset, val_gt_dataset, test_dataset, test_gt_dataset
+            train_dataset,
+            train_val_dataset,
+            val_dataset,
+            val_gt_dataset,
+            test_dataset,
+            test_gt_dataset,
         )
         self.seq_val_dataset = seq_validation_dataset
         self.seq_test_dataset = seq_test_dataset
@@ -220,10 +245,10 @@ class ExperimentRunner(BaseRunner):
             seq_test_dataset,
         )
 
-    def calculate_metrics(self, predictions, ground_truth):
+    def calculate_metrics(self, predictions, ground_truth, test_events=None):
         """Calculate and return the desired metrics based on the predictions."""
         top_k = self.config["metrics"]["ks"]
-        metrics_list = [
+        base_metrics = [
             Recall(top_k),
             Precision(top_k),
             MAP(top_k),
@@ -231,10 +256,24 @@ class ExperimentRunner(BaseRunner):
             MRR(top_k),
             HitRate(top_k),
         ]
-        metrics = OfflineMetrics(
-            metrics_list, query_column="user_id", rating_column="score"
-        )(predictions, ground_truth)
-        return metrics_to_df(metrics)
+
+        diversity_metrics = []
+        if test_events is not None:
+            diversity_metrics = [
+                Coverage(top_k),
+                Surprisal(top_k),
+            ]
+
+        all_metrics = base_metrics + diversity_metrics
+        metrics_results = OfflineMetrics(
+            all_metrics, query_column="user_id", rating_column="score"
+        )(
+            predictions,
+            ground_truth,
+            test_events,
+        )
+
+        return metrics_to_df(metrics_results)
 
     def save_model(self, trainer, best_model):
         """Save the best model checkpoint to the specified directory."""
