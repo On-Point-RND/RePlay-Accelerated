@@ -423,7 +423,7 @@ class GridParamsSearchRunner(BaseRunner):
             rating_column="score",
             postprocessors=[RemoveSeenItems(self.seq_test_dataset)],
         )
-        L.Trainer(callbacks=[pandas_prediction_callback], inference_mode=True, devices=self.devices).predict(
+        L.Trainer(callbacks=[pandas_prediction_callback], precision=self.model_cfg["training_params"]["precision"], inference_mode=True, devices=self.devices).predict(
             best_model, dataloaders=prediction_dataloader, return_predictions=False
         )
 
