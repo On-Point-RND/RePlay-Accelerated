@@ -10,8 +10,8 @@ try:
     from bitsandbytes.triton.int8_matmul_mixed_dequantize import int8_matmul_mixed_dequantize
     from bitsandbytes.triton.quantize_rowwise import quantize_rowwise
     from bitsandbytes.triton.triton_utils import is_triton_available
-except ImportWarning:
-    ImportWarning("bitsandbytes is not installed. SwitchBack cannot be used.")
+except ModuleNotFoundError:
+    print("bitsandbytes is not installed. SwitchBack cannot be used.")
 
 from replay.data.nn import TensorFeatureInfo, TensorMap, TensorSchema
 

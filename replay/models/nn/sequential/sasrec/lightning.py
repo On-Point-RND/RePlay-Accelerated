@@ -27,8 +27,8 @@ try:
         _handle_eps,
         handle_reduction_none,
     )
-except ImportWarning:
-    ImportWarning("cut_cross_entropy is not installed. CCE / CCE_minus loss cannot be used.")
+except ModuleNotFoundError:
+    print("cut_cross_entropy is not installed. CCE / CCE_minus loss cannot be used.")
 
 
 class SasRec(lightning.LightningModule):
@@ -411,7 +411,11 @@ class SasRec(lightning.LightningModule):
         padding_mask: torch.BoolTensor,
         target_padding_mask: torch.BoolTensor,
     ) -> torch.Tensor:
-        
+        """
+        Calculate the Cross-Entropy (CE) loss restricting size of
+        out_emb and positive labels according to the target padding mask.
+        """
+
         (logits, labels) = self._get_restricted_logits_for_ce_loss(
                 feature_tensors, positive_labels, padding_mask, target_padding_mask
             )
@@ -456,6 +460,16 @@ class SasRec(lightning.LightningModule):
         padding_mask: torch.BoolTensor,
         target_padding_mask: torch.BoolTensor
     ) -> torch.Tensor:
+        """
+        Cut Cross-Entropy (CCE), a method that computes the cross-entropy loss 
+        without materializing the logits for all tokens into global memory.
+        The method is implemented in a custom kernel that performs the matrix multiplications 
+        and the log-sum-exp reduction over the vocabulary in flash memory, 
+        making global memory consumption for the cross-entropy computation negligible.
+
+        https://arxiv.org/abs/2411.09009
+        https://github.com/apple/ml-cross-entropy
+        """
 
         bias = None
         ignore_index = -100
