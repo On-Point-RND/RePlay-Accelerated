@@ -435,6 +435,7 @@ class SasRec(lightning.LightningModule):
             torch.LongTensor, torch.masked_select(positive_labels, target_padding_mask)
         )
 
+        # Next token prediction
         # output_emb = self._model.forward_step(feature_tensors, target_padding_mask)
         # output_emb = output_emb[:, :-1, :][target_padding_mask[:, :-1]]
 
@@ -464,26 +465,25 @@ class SasRec(lightning.LightningModule):
         shift = False
         filter_eps = "auto"
         use_kahan = False
-        item_emb_mask = None
+        item_inds = None
 
-        # e = self._model.forward_step(feature_tensors, padding_mask)
-        # e = e.to(torch.bfloat16)
-        # targets = positive_labels
-        # c = self._model._head._item_embedder.get_all_item_weights()
-
-        e = self._model.forward_step(feature_tensors, target_padding_mask)
-        e = e[:, :-1, :][target_padding_mask[:, :-1]]
-        
+        e = self._model.forward_step(feature_tensors, padding_mask)
+        e = e.to(torch.float16)
+        targets = cast(torch.LongTensor, positive_labels)
         c = self._model._head._item_embedder.get_all_item_weights()
 
-        padding_mask[:, 0] = False
-        targets = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
+        # Next token prediction
+        # e = self._model.forward_step(feature_tensors, target_padding_mask)
+        # e = e[:, :-1, :][target_padding_mask[:, :-1]]
+        # e = e.to(torch.float16)
+        # c = self._model._head._item_embedder.get_all_item_weights()
+        # padding_mask[:, 0] = False
+        # targets = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
 
         e = e.contiguous()
-        e = e.to(torch.float16)
         padding_mask = padding_mask.contiguous()
 
-        # assert e.size()[0:-1] == targets.size()
+        assert e.size()[0:-1] == targets.size()
         assert e.size(-1) == c.size(1)
         if not torch.cuda.is_bf16_supported():
             raise RuntimeError(
@@ -505,15 +505,16 @@ class SasRec(lightning.LightningModule):
         assert (targets.data_ptr() % 16) == 0
 
         if self._loss_sample_count is not None:
+            filter_eps = None
             n_negative_samples = self._loss_sample_count
             vocab_size = self._vocab_size
             device = padding_mask.device
-
-            e = e[target_padding_mask]
-            positive_labels = cast(
-                torch.LongTensor, torch.masked_select(positive_labels, target_padding_mask)
-            )  # (masked_batch_seq_size,)
-            masked_batch_seq_size = positive_labels.size(0)
+            
+            masked_batch_seq_size = targets.size(0)
+            # probs = torch.ones((masked_batch_seq_size, vocab_size), device=device)
+            # ids = torch.arange(masked_batch_seq_size, dtype=torch.long, device=device)
+            # probs[ids, targets] = 0.0
+            # negative_labels = torch.multinomial(probs, num_samples=n_negative_samples, replacement=False)
 
             negative_labels = torch.randint(
                 low=0,
@@ -523,12 +524,9 @@ class SasRec(lightning.LightningModule):
                 device=device,
             )
             
-            item_labels = torch.hstack([positive_labels, negative_labels])
+            item_inds = torch.hstack([targets.view(-1, 1), negative_labels])
 
 
-            item_emb_mask = torch.zeros_like(c, dtype=torch.bool)
-            item_emb_mask[item_labels] = True
-            
         params = CCEParams(
             targets,
             valids,
@@ -538,23 +536,11 @@ class SasRec(lightning.LightningModule):
             shift,
             batch_shape,
             use_kahan,
+            item_inds
         ) 
-  
-        loss = self._loss.apply(e, c.to(e.dtype), bias, item_emb_mask, params)
-
+      
+        loss = self._loss.apply(e, c.to(e.dtype), bias, params)
         assert isinstance(loss, torch.Tensor)
-
-
-        # positive_labels = cast(
-        #     torch.LongTensor, torch.masked_select(positive_labels, target_padding_mask)
-        # )
-
-
-        # loss = self._loss.apply(
-        #     output_emb.view(-1, self._model.hidden_size),
-        #     self._model._head._item_embedder.get_all_item_weights(),
-        #     positive_labels
-        # )
 
         return loss
 
@@ -567,21 +553,20 @@ class SasRec(lightning.LightningModule):
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.LongTensor, torch.LongTensor, int]:
         assert self._loss_sample_count is not None
         n_negative_samples = self._loss_sample_count
-        # positive_labels = cast(
-        #     torch.LongTensor, torch.masked_select(positive_labels, target_padding_mask)
-        # )  # (masked_batch_seq_size,)
-        # masked_batch_seq_size = positive_labels.size(0)
-        # device = padding_mask.device
-        # output_emb = self._model.forward_step(feature_tensors, padding_mask)[target_padding_mask]
-
-
-        output_emb = self._model.forward_step(feature_tensors, target_padding_mask)
-        output_emb = output_emb[:, :-1, :][target_padding_mask[:, :-1]]
-
-        padding_mask[:, 0] = False
-        positive_labels = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
+        positive_labels = cast(
+            torch.LongTensor, torch.masked_select(positive_labels, target_padding_mask)
+        )  # (masked_batch_seq_size,)
         masked_batch_seq_size = positive_labels.size(0)
         device = padding_mask.device
+        output_emb = self._model.forward_step(feature_tensors, padding_mask)[target_padding_mask]
+
+        # Next token prediction
+        # output_emb = self._model.forward_step(feature_tensors, target_padding_mask)
+        # output_emb = output_emb[:, :-1, :][target_padding_mask[:, :-1]]
+        # padding_mask[:, 0] = False
+        # positive_labels = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
+        # masked_batch_seq_size = positive_labels.size(0)
+        # device = padding_mask.device
 
 
         positive_labels = cast(torch.LongTensor, positive_labels.view(-1, 1))
@@ -656,17 +641,18 @@ class SasRec(lightning.LightningModule):
         target_padding_mask: torch.BoolTensor
     ):
         device = padding_mask.device
-        # positive_labels = cast(
-        #     torch.LongTensor, torch.masked_select(positive_labels, padding_mask)
-        # )  # (masked_batch_seq_size,)
-        # output_emb = self._model.forward_step(feature_tensors, padding_mask)
-        # output_emb = output_emb[padding_mask]
+        positive_labels = cast(
+            torch.LongTensor, torch.masked_select(positive_labels, target_padding_mask)
+        )  # (masked_batch_seq_size,)
+        output_emb = self._model.forward_step(feature_tensors, padding_mask)
+        output_emb = output_emb[target_padding_mask]
 
-        output_emb = self._model.forward_step(feature_tensors, target_padding_mask)
-        output_emb = output_emb[:, :-1, :][target_padding_mask[:, :-1]]
+        # Next token prediction
+        # output_emb = self._model.forward_step(feature_tensors, target_padding_mask)
+        # output_emb = output_emb[:, :-1, :][target_padding_mask[:, :-1]]
 
-        padding_mask[:, 0] = False
-        positive_labels = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
+        # padding_mask[:, 0] = False
+        # positive_labels = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
 
         if self._restrict_items:
             # unique_positive_labels, positive_labels_indices = positive_labels.unique(return_inverse=True)
