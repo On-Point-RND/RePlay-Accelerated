@@ -35,7 +35,6 @@ class Bert4Rec(lightning.LightningModule):
         bucket_size_x: int = 100,
         bucket_size_y: int = 100,
         mix_x: bool = False,
-        restrict_items: bool = False,
         optimizer_factory: OptimizerFactory = FatOptimizerFactory(),
         lr_scheduler_factory: Optional[LRSchedulerFactory] = None,
         acceleration_config: Optional[dict] = None
@@ -122,7 +121,6 @@ class Bert4Rec(lightning.LightningModule):
         self._bucket_size_x = bucket_size_x
         self._bucket_size_y = bucket_size_y
         self._mix_x = mix_x
-        self._restrict_items = restrict_items
         assert negative_sampling_strategy in {"global_uniform", "inbatch"}
 
         item_count = tensor_schema.item_id_features.item().cardinality
@@ -205,13 +203,15 @@ class Bert4Rec(lightning.LightningModule):
             for feature_name, feature_tensor in features.items():
                 if self._schema[feature_name].is_cat:
                     features[feature_name] = torch.nn.functional.pad(
-                        feature_tensor, (self._model.max_len - sequence_item_count, 0), value=0
+                        feature_tensor,
+                        (self._model.max_len - sequence_item_count, 0),
+                        value=self._schema[feature_name].padding_value,
                     )
                 else:
                     features[feature_name] = torch.nn.functional.pad(
                         feature_tensor.view(feature_tensor.size(0), feature_tensor.size(1)),
                         (self._model.max_len - sequence_item_count, 0),
-                        value=0,
+                        value=self._schema[feature_name].padding_value,
                     ).unsqueeze(-1)
             padding_mask = torch.nn.functional.pad(
                 padding_mask, (self._model.max_len - sequence_item_count, 0), value=0
@@ -374,7 +374,6 @@ class Bert4Rec(lightning.LightningModule):
         labels_mask = (~padding_mask) + tokens_mask
         masked_tokens = ~labels_mask
 
-        pad_token = feature_tensors[self._schema.item_id_feature_name].view(-1)[~padding_mask.view(-1)][0]
         emb = self._model.forward_step(feature_tensors, padding_mask, tokens_mask)
         hd = torch.tensor(emb.shape[-1])
 
@@ -522,8 +521,7 @@ class Bert4Rec(lightning.LightningModule):
         feature_tensors: TensorMap,
         positive_labels: torch.LongTensor,
         padding_mask: torch.BoolTensor,
-        tokens_mask: torch.BoolTensor,
-        restrict_items: bool = False
+        tokens_mask: torch.BoolTensor
     ):
         labels_mask = (~padding_mask) + tokens_mask
         masked_tokens = ~labels_mask
@@ -531,18 +529,8 @@ class Bert4Rec(lightning.LightningModule):
             torch.LongTensor, torch.masked_select(positive_labels, masked_tokens)
         )  # (masked_batch_seq_size,)
         output_emb = self._model.forward_step(feature_tensors, padding_mask, tokens_mask)[masked_tokens]
-        
-        if restrict_items:
-            unique_positive_labels, positive_labels_indices = positive_labels.unique(return_inverse=True)
-            logits = self._model.get_logits_for_restricted_loss(
-                output_emb, 
-                unique_positive_labels
-            )
-            return (logits, positive_labels_indices)
-
-        else:
-            logits = self._model.get_logits_for_restricted_loss(output_emb)
-            return (logits, positive_labels)            
+        logits = self._model.get_logits_for_restricted_loss(output_emb)
+        return (logits, positive_labels)            
 
     def _create_loss(self) -> Union[torch.nn.BCEWithLogitsLoss, torch.nn.CrossEntropyLoss]:
         if self._loss_type == "BCE":
@@ -657,6 +645,21 @@ class Bert4Rec(lightning.LightningModule):
         else:
             msg = f"Expected optimizer_factory of type OptimizerFactory, got {type(optimizer_factory)}"
             raise ValueError(msg)
+
+    @property
+    def candidates_to_score(self) -> Union[torch.LongTensor, None]:  # pragma: no cover
+        """
+        Returns tensor of item ids to calculate scores.
+        """
+        return None
+
+    @candidates_to_score.setter
+    def candidates_to_score(self, candidates: Optional[torch.LongTensor] = None) -> None:
+        """
+        Sets tensor of item ids to calculate scores.
+        :param candidates: Tensor of item ids to calculate scores.
+        """
+        raise NotImplementedError()
 
     def _set_new_item_embedder_to_model(self, weights_new: torch.nn.Embedding, new_vocab_size: int):
         self._model.item_embedder.cat_embeddings[self._model.schema.item_id_feature_name] = weights_new

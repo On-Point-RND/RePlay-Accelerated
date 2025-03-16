@@ -1,15 +1,33 @@
+from pathlib import Path
+from urllib.parse import urlencode
+from zipfile import ZipFile
 import os
 import pandas as pd
+import requests
 import logging
+import json
 
 from rs_datasets import MovieLens, Netflix
 
-from replay.splitters import TimeSplitter
-from replay.preprocessing.filters import MinCountFilter, NumInteractionsFilter
+from replay.splitters import TimeSplitter, LastNSplitter, ColdUserRandomSplitter
+from replay.preprocessing.filters import MinCountFilter
 
 DATASET_MAPPINGS = {
     "zvuk": {"kaggle": "alexxl/zvuk-dataset", "file": "zvuk-interactions.parquet"},
     "megamarket": {"kaggle": "alexxl/megamarket", "file": "megamarket.parquet"},
+    "yelp": {
+        "kaggle": "yelp-dataset/yelp-dataset",
+        "file": "yelp_academic_dataset_review.json",
+    },
+}
+AMAZON_URLS = {
+    "games": "https://mcauleylab.ucsd.edu/public_datasets/data/amazon_2023/benchmark/5core/rating_only/Toys_and_Games.csv.gz",
+    "beauty": "https://mcauleylab.ucsd.edu/public_datasets/data/amazon_2023/benchmark/5core/rating_only/Beauty_and_Personal_Care.csv.gz",
+    "sports": "https://mcauleylab.ucsd.edu/public_datasets/data/amazon_2023/benchmark/5core/rating_only/Sports_and_Outdoors.csv.gz",
+}
+YANDEX_URLS = {
+    "30music": "https://disk.yandex.ru/d/XwRRFVuJG-ECng",
+    "gowalla": "https://disk.yandex.ru/d/PaPpcpwkWcHRHg",
 }
 SUPPORTED_RS_DATASETS = ["movielens", "netflix"]
 
@@ -30,7 +48,9 @@ class DatasetManager:
         split_paths = {
             "train": os.path.join(self.split_cache_dir, "train.parquet"),
             "validation": os.path.join(self.split_cache_dir, "validation.parquet"),
-            "validation_gt": os.path.join(self.split_cache_dir, "validation_gt.parquet"),
+            "validation_gt": os.path.join(
+                self.split_cache_dir, "validation_gt.parquet"
+            ),
             "test": os.path.join(self.split_cache_dir, "test.parquet"),
             "test_gt": os.path.join(self.split_cache_dir, "test_gt.parquet"),
         }
@@ -66,8 +86,74 @@ class DatasetManager:
             self._download_kaggle_dataset(data_path, dataset_name, interactions_file)
         elif any(ds in dataset_name for ds in SUPPORTED_RS_DATASETS):
             self._download_rs_dataset(data_path, dataset_name, interactions_file)
+        elif dataset_name in AMAZON_URLS:
+            self._download_csv_gz_dataset(dataset_name, interactions_file)
+        elif dataset_name in YANDEX_URLS:
+            self._load_yandex_dataset(dataset_name)
         else:
             raise ValueError(f"Unsupported dataset: {dataset_name}")
+
+    def _load_yandex_dataset(self, dataset_name: str) -> None:
+        data_src = Path(os.path.dirname(self.data_path))
+        data_src.mkdir(exist_ok=True)
+
+        url = "https://cloud-api.yandex.net/v1/disk/public/resources/download?" + \
+                urlencode({"public_key": YANDEX_URLS[dataset_name]})
+
+        download_url = requests.get(url, timeout=10).json()["href"]
+
+        with open("temp.zip", 'wb') as file:
+            for i, chunk in enumerate(
+                requests.get(download_url, stream=True, timeout=10).iter_content(1024)
+            ):
+                file.write(chunk)
+                if i < 1024:
+                    output = f"{round(i, 2)} K"
+                elif 1024 <= i < 1024 ** 2:
+                    output = f"{round(i / 1024, 2)} M"
+                else:
+                    output = f"{round(i / 1024 ** 2, 2)} G"
+                print(f"Total downloaded - " + output.rjust(9), end="\r")
+
+        with ZipFile("temp.zip") as zfile:
+            zfile.extractall(data_src)
+
+        os.remove("temp.zip")
+
+    def _download_csv_gz_dataset(self, dataset_name: str, interactions_file: str):
+        """Download and preprocess datasets from CSV GZ format."""
+        url = AMAZON_URLS[dataset_name]
+        raw_file = os.path.join(self.data_path, f"{dataset_name}.csv.gz")
+
+        if not os.path.exists(raw_file):
+            logging.info(f"Downloading {dataset_name} dataset from {url}")
+            response = requests.get(url, stream=True, verify=False)
+            with open(raw_file, "wb") as file:
+                for chunk in response.iter_content(chunk_size=1024):
+                    file.write(chunk)
+            logging.info("Download complete.")
+
+        logging.info(f"Processing {dataset_name} dataset...")
+        df = pd.read_csv(raw_file, compression="gzip")
+
+        column_mapping = {
+            "reviewerID": self.user_column,
+            "parent_asin": self.item_column,
+            "unixReviewTime": self.timestamp_column,
+            "rating": self.config["dataset"]["feature_schema"]["rating_column"],
+        }
+        df.rename(columns=column_mapping, inplace=True)
+
+        min_rating = self.config["dataset"]["preprocess"]["min_rating"]
+        df = df[
+            df[self.config["dataset"]["feature_schema"]["rating_column"]] > min_rating
+        ]
+
+        df[self.timestamp_column] = df[self.timestamp_column].astype("int64")
+        df.to_parquet(interactions_file)
+        logging.info(
+            f"{dataset_name} dataset processed and saved at {interactions_file}"
+        )
 
     def _download_kaggle_dataset(
         self, data_path: str, dataset_name: str, interactions_file: str
@@ -88,14 +174,32 @@ class DatasetManager:
         api.dataset_download_files(kaggle_dataset, path=data_path, unzip=True)
         logging.info(f"Dataset downloaded and extracted to {data_path}")
 
-        interactions = pd.read_parquet(raw_data_file)
+        if dataset_name == "yelp":
+            prime = []
+            for line in open(raw_data_file, "r", encoding="UTF-8"):
+                val = json.loads(line)
+                prime.append(
+                    [val[self.user_column], val["business_id"], val["stars"], val["date"]]
+                )
+            interactions = pd.DataFrame(
+                prime,
+                columns=[
+                    self.user_column,
+                    self.item_column,
+                    self.config["dataset"]["feature_schema"]["rating_column"],
+                    self.timestamp_column,
+                ],
+            )
+            interactions["timestamp"] = pd.to_datetime(interactions["timestamp"])
+        else:
+            interactions = pd.read_parquet(raw_data_file)
         interactions[self.timestamp_column] = interactions[
             self.timestamp_column
         ].astype("int64")
         if dataset_name == "megamarket":
             interactions = interactions[interactions.event == 2]  # take only purchase
         if dataset_name == "zvuk":
-            interactions.rename(columns={'track_id': 'item_id'}, inplace=True)
+            interactions.rename(columns={"track_id": self.item_column}, inplace=True)
         interactions.to_parquet(interactions_file)
 
     def _download_rs_dataset(
@@ -124,10 +228,14 @@ class DatasetManager:
             interactions = interactions.sort_values(
                 by=[self.user_column, self.timestamp_column]
             )
-            interactions[self.timestamp_column] = pd.to_datetime(interactions[self.timestamp_column])
+            interactions[self.timestamp_column] = pd.to_datetime(
+                interactions[self.timestamp_column]
+            )
             interactions[self.timestamp_column] += pd.to_timedelta(
-                interactions.groupby([self.user_column, self.timestamp_column]).cumcount(), 
-                unit="s"
+                interactions.groupby(
+                    [self.user_column, self.timestamp_column]
+                ).cumcount(),
+                unit="s",
             )
         else:
             raise ValueError(f"Unsupported dataset: {dataset_name}")
@@ -165,61 +273,44 @@ class DatasetManager:
 
     def _split_data(self, interactions):
         """Split data for training, validation, and testing."""
-        splitter = TimeSplitter(
+        global_splitter = TimeSplitter(
             time_threshold=self.config["dataset"]["preprocess"]["global_split_ratio"],
-            drop_cold_users=True,
+            drop_cold_users=False,
             drop_cold_items=True,
             item_column=self.item_column,
             query_column=self.user_column,
             timestamp_column=self.timestamp_column,
         )
-
-        test_events, test_gt = splitter.split(interactions)
-        validation_events, validation_gt = splitter.split(test_events)
-        train_events = validation_events
-
-        test_gt = test_gt[
-            test_gt[self.item_column].isin(train_events[self.item_column])
-        ]
-        test_gt = test_gt[
-            test_gt[self.user_column].isin(train_events[self.user_column])
-        ]
-
-        # Limit number of gt events in val and test only if max_num_test_interactions is not null
-        max_test_interactions = self.config["dataset"]["preprocess"][
-            "max_num_test_interactions"
-        ]
-        logging.info(
-            f"Distribution of seq_len in validation:\n{validation_gt.groupby(self.user_column)[self.item_column].agg('count').describe()}."
+        val_splitter = ColdUserRandomSplitter(
+            test_size=self.config["dataset"]["preprocess"]["val_users_ratio"],
+            drop_cold_items=True,
+            query_column=self.user_column,
+            item_column=self.item_column,
+            seed=42,
         )
-        logging.info(
-            f"Distribution of seq_len in test:\n{test_gt.groupby(self.user_column)[self.item_column].agg('count').describe()}."
+        loo_splitter = LastNSplitter(
+            N=1,
+            drop_cold_users=True,
+            drop_cold_items=False,
+            divide_column=self.user_column,
+            query_column=self.user_column,
+            item_column=self.item_column,
+            strategy="interactions",
+            timestamp_column=self.timestamp_column,
         )
-        if max_test_interactions is not None:
 
-            validation_gt = NumInteractionsFilter(
-                num_interactions=max_test_interactions,
-                first=True,
-                query_column=self.user_column,
-                item_column=self.item_column,
-                timestamp_column=self.timestamp_column,
-            ).transform(validation_gt)
-            logging.info(
-                f"Distribution of seq_len in validation  after filtering:\n{validation_gt.groupby(self.user_column)[self.item_column].agg('count').describe()}."
-            )
-
-            test_gt = NumInteractionsFilter(
-                num_interactions=max_test_interactions,
-                first=True,
-                query_column=self.user_column,
-                item_column=self.item_column,
-                timestamp_column=self.timestamp_column,
-            ).transform(test_gt)
-            logging.info(
-                f"Distribution of seq_len in test after filtering:\n{test_gt.groupby(self.user_column)[self.item_column].agg('count').describe()}."
-            )
-        else:
-            logging.info("max_num_test_interactions is null. Skipping filtration.")
+        train, raw_test = global_splitter.split(interactions)
+        train_events, val = val_splitter.split(train)
+        test_users = set(raw_test[self.user_column]) - set(val[self.user_column])
+        test_events, test_gt = loo_splitter.split(
+            interactions[
+                (interactions[self.user_column].isin(test_users))
+                & interactions[self.item_column].isin(train_events[self.item_column].unique())
+            ]
+        )
+        validation_events, validation_gt = loo_splitter.split(val)
+        test_gt = test_gt[test_gt[self.item_column].isin(train_events[self.item_column])]
+        test_gt = test_gt[test_gt[self.user_column].isin(train_events[self.user_column])]
 
         return {
             "train": train_events,

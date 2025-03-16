@@ -6,25 +6,15 @@ from typing import Dict, Optional, Union
 import torch
 import torch.nn as nn
 
-# from bitsandbytes.triton.int8_matmul_mixed_dequantize import int8_matmul_mixed_dequantize
-# from bitsandbytes.triton.quantize_rowwise import quantize_rowwise
-# from bitsandbytes.triton.triton_utils import is_triton_available
+try:
+    from bitsandbytes.triton.int8_matmul_mixed_dequantize import int8_matmul_mixed_dequantize
+    from bitsandbytes.triton.quantize_rowwise import quantize_rowwise
+    from bitsandbytes.triton.triton_utils import is_triton_available
+except ImportWarning:
+    ImportWarning("bitsandbytes is not installed. SwitchBack cannot be used.")
 
 from replay.data.nn import TensorFeatureInfo, TensorMap, TensorSchema
 
-
-# from bnbtriton.quantize_rowwise import quantize_rowwise
-# from bnbtriton.int8_matmul_rowwise_dequantize import int8_matmul_rowwise_dequantize
-# from bnbtriton.triton_utils import is_triton_available
-
-# from bnbtriton.quantize_rowwise_bf16 import quantize_rowwise_bf16
-# from bnbtriton.int8_matmul_rowwise_dequantize_bf16 import int8_matmul_rowwise_dequantize_bf16
-
-# from bnbtriton.prune_rowwise import prune_rowwise
-
-# from bnbtriton.fp16_matmul import fp16_matmul
-
-# import logging
 
 class Bert4RecModel(torch.nn.Module):
     """
@@ -412,7 +402,7 @@ class BaseHead(ABC, torch.nn.Module):
             item_embeddings = item_embeddings[item_ids]
             bias = bias[item_ids]
 
-        logits = item_embeddings.matmul(out_embeddings.unsqueeze(-1)).squeeze(-1) + bias
+        logits = torch.matmul(out_embeddings, item_embeddings.t()) + bias
         return logits
 
     def forward_for_restricted_loss(
@@ -538,62 +528,28 @@ class LinearHead(torch.nn.Module):
         logits = self.linear(out_embeddings)
         return logits
 
-# class _switchback_global(torch.autograd.Function):
-class _switchback_vectorrize(torch.autograd.Function):
+
+class _switchback_global(torch.autograd.Function):
     @staticmethod
     def forward(ctx, X_3D, W, bias):
         X = X_3D.view(-1, X_3D.size(-1))
-        X_int8, state_X = quantize_rowwise(X.half())
-        W_int8, state_W = quantize_rowwise(W.half())
+        X_int8, state_X = quantize_rowwise(X)
+        W_int8, state_W = quantize_rowwise(W)
         ctx.save_for_backward = X, W, bias
-        # res = int8_matmul_mixed_dequantize(X_int8, W_int8.t(), state_X, state_W, bias).view(*X_3D.size()[:-1], -1)
-        res = int8_matmul_rowwise_dequantize(X_int8, W_int8.t(), state_X, state_W, bias.half()).view(*X_3D.size()[:-1], -1)
+        res = int8_matmul_mixed_dequantize(X_int8, W_int8.t(), state_X, state_W, bias).view(*X_3D.size()[:-1], -1)
         return res
-
-    # @staticmethod
-    # def backward(ctx, grad_output_3D):
-    #     input, weight, bias = ctx.save_for_backward
-    #     grad_output = grad_output_3D.reshape(-1, grad_output_3D.size(-1))
-    #     grad_input = grad_weight = grad_bias = None
-    #     if ctx.needs_input_grad[0]:
-    #         grad_input = grad_output.matmul(weight.to(grad_output.dtype)).view(*grad_output_3D.size()[:-1], -1)
-    #     if ctx.needs_input_grad[1]:
-    #         grad_weight = grad_output.t().matmul(input.to(grad_output.dtype))
-    #     if bias is not None and ctx.needs_input_grad[2]:
-    #         grad_bias = grad_output.sum(0)
-    #     return grad_input, grad_weight, grad_bias
 
     @staticmethod
     def backward(ctx, grad_output_3D):
         input, weight, bias = ctx.save_for_backward
         grad_output = grad_output_3D.reshape(-1, grad_output_3D.size(-1))
         grad_input = grad_weight = grad_bias = None
-        breakpoint()
-
         if ctx.needs_input_grad[0]:
-            # grad_input = torch.matmul(
-            #     grad_output,
-            #     weight.to(grad_output.dtype)
-            # ).view(*grad_output_3D.size()[:-1], -1)
-            grad_input = torch.matmul(
-                grad_output.to(weight.dtype),
-                weight
-            ).view(*grad_output_3D.size()[:-1], -1)
-        
+            grad_input = grad_output.matmul(weight.to(grad_output.dtype)).view(*grad_output_3D.size()[:-1], -1)
         if ctx.needs_input_grad[1]:
-            # grad_weight = torch.matmul(
-            #     grad_output.t(),
-            #     input.to(grad_output.dtype)
-            # )
-            grad_weight = torch.matmul(
-                grad_output.t().to(input.dtype),
-                input
-            )
-        
+            grad_weight = grad_output.t().matmul(input.to(grad_output.dtype))
         if bias is not None and ctx.needs_input_grad[2]:
-            # grad_bias = grad_output.to(bias.dtype).sum(0)
-            grad_bias = grad_output.to(bias.dtype).sum(0)
-        
+            grad_bias = grad_output.sum(0)
         return grad_input, grad_weight, grad_bias
        
 class SwitchBackLinear(nn.Linear):
@@ -610,8 +566,7 @@ class SwitchBackLinear(nn.Linear):
         if not is_triton_available():
             raise ImportError("""Could not import triton. Please install triton to use SwitchBackLinear.
                                Alternatively, you can use bnb.nn.SwitchBackLinearBnb, but it will be slower""")
-        # self._fn = _switchback_global
-        self._fn = _switchback_vectorrize
+        self._fn = _switchback_global
 
 
 class SwichBackHead(BaseHead):

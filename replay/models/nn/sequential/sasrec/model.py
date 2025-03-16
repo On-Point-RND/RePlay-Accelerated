@@ -310,31 +310,7 @@ class EmbeddingTyingHead(torch.nn.Module):
         if len(item_embeddings.shape) > 2:  # global_uniform, negative sharing=False, train only
             logits = (item_embeddings * out_embeddings.unsqueeze(-2)).sum(dim=-1)
         else:
-            # logits = item_embeddings.matmul(out_embeddings.unsqueeze(-1)).squeeze(-1)
-            logits = torch.nn.functional.linear(out_embeddings, item_embeddings)
-
-        return logits
-
-    def forward_for_restricted_loss(
-        self,
-        out_embeddings: torch.Tensor,
-        item_ids: Optional[torch.LongTensor] = None,
-    )-> torch.Tensor:
-        """
-        :param out_embeddings: Embeddings after `forward step`.
-        :param item_ids: Item ids to calculate scores.
-            Default: ``None``.
-
-        :returns: Calculated logits.
-        """
-
-        if item_ids is not None:
-            item_embeddings = self._item_embedder.get_item_weights(item_ids)
-        else:
-            item_embeddings = self._item_embedder.get_all_item_weights()
-
-        logits = torch.matmul(out_embeddings, item_embeddings.t())
-
+            logits = torch.matmul(out_embeddings, item_embeddings.t())
         return logits
 
 

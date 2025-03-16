@@ -1,6 +1,6 @@
 defaults:
-  - dataset: zvuk
-  - model: bert4rec_zvuk
+  - dataset: megamarket
+  - model: sasrec_megamarket
   - mode: train
   - acceleration: null
 
@@ -24,9 +24,17 @@ metrics:
     - precision
     - map
     - mrr
+<<<<<<< HEAD
     - coverage
+=======
+>>>>>>> origin/main
   ks:
     - 1
     - 5
     - 10
+<<<<<<< HEAD
     - 20
+=======
+    - 20
+    - 100
+>>>>>>> origin/main
