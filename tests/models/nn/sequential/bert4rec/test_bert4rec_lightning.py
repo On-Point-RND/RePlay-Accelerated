@@ -1,10 +1,10 @@
 import pytest
 
-from replay.data import FeatureHint
+from replay.data import FeatureHint, FeatureType
 from replay.utils import TORCH_AVAILABLE
 
 if TORCH_AVAILABLE:
-    from replay.experimental.nn.data.schema_builder import TensorSchemaBuilder
+    from replay.data.nn import TensorFeatureInfo, TensorSchema
     from replay.models.nn.optimizer_utils import FatLRSchedulerFactory, FatOptimizerFactory
     from replay.models.nn.sequential.bert4rec import Bert4Rec, Bert4RecPredictionBatch, Bert4RecPredictionDataset
 
@@ -23,7 +23,7 @@ L = pytest.importorskip("lightning")
     ],
 )
 def test_training_bert4rec_with_different_losses(
-    item_user_sequential_dataset, train_loader, val_loader, loss_type, loss_sample_count
+    item_user_sequential_dataset, train_bert_loader, val_bert_loader, loss_type, loss_sample_count
 ):
     trainer = L.Trainer(max_epochs=1)
     model = Bert4Rec(
@@ -33,7 +33,7 @@ def test_training_bert4rec_with_different_losses(
         loss_type=loss_type,
         loss_sample_count=loss_sample_count,
     )
-    trainer.fit(model, train_loader, val_loader)
+    trainer.fit(model, train_bert_loader, val_bert_loader)
 
 
 @pytest.mark.torch
@@ -45,7 +45,7 @@ def test_init_bert4rec_with_invalid_loss_type(item_user_sequential_dataset):
 
 
 @pytest.mark.torch
-def test_train_bert4rec_with_invalid_loss_type(item_user_sequential_dataset, train_loader):
+def test_train_bert4rec_with_invalid_loss_type(item_user_sequential_dataset, train_bert_loader):
     with pytest.raises(ValueError):
         trainer = L.Trainer(max_epochs=1)
         model = Bert4Rec(
@@ -54,11 +54,11 @@ def test_train_bert4rec_with_invalid_loss_type(item_user_sequential_dataset, tra
             hidden_size=64,
         )
         model._loss_type = ""
-        trainer.fit(model, train_dataloaders=train_loader)
+        trainer.fit(model, train_dataloaders=train_bert_loader)
 
 
 @pytest.mark.torch
-def test_prediction_bert4rec(item_user_sequential_dataset, train_loader):
+def test_prediction_bert4rec(item_user_sequential_dataset, train_bert_loader):
     pred = Bert4RecPredictionDataset(item_user_sequential_dataset, max_sequence_length=5)
     pred_loader = torch.utils.data.DataLoader(pred)
     trainer = L.Trainer(max_epochs=1)
@@ -67,7 +67,7 @@ def test_prediction_bert4rec(item_user_sequential_dataset, train_loader):
         max_seq_len=5,
         hidden_size=64,
     )
-    trainer.fit(model, train_loader)
+    trainer.fit(model, train_bert_loader)
     predicted = trainer.predict(model, pred_loader)
 
     assert len(predicted) == len(pred)
@@ -142,7 +142,7 @@ def test_bert4rec_configure_wrong_optimizer(item_user_sequential_dataset):
     ],
 )
 def test_different_sampling_strategies(
-    item_user_sequential_dataset, train_loader, val_loader, negative_sampling_strategy, negatives_sharing
+    item_user_sequential_dataset, train_bert_loader, val_bert_loader, negative_sampling_strategy, negatives_sharing
 ):
     trainer = L.Trainer(max_epochs=1)
     model = Bert4Rec(
@@ -154,18 +154,18 @@ def test_different_sampling_strategies(
         negative_sampling_strategy=negative_sampling_strategy,
         negatives_sharing=negatives_sharing,
     )
-    trainer.fit(model, train_loader, val_loader)
+    trainer.fit(model, train_bert_loader, val_bert_loader)
 
 
 @pytest.mark.torch
-def test_not_implemented_sampling_strategy(item_user_sequential_dataset, train_loader, val_loader):
+def test_not_implemented_sampling_strategy(item_user_sequential_dataset, train_bert_loader, val_bert_loader):
     trainer = L.Trainer(max_epochs=1)
     model = Bert4Rec(
         tensor_schema=item_user_sequential_dataset._tensor_schema, max_seq_len=5, hidden_size=64, loss_sample_count=6
     )
     model._negative_sampling_strategy = ""
     with pytest.raises(NotImplementedError):
-        trainer.fit(model, train_loader, val_loader)
+        trainer.fit(model, train_bert_loader, val_bert_loader)
 
 
 @pytest.mark.torch
@@ -182,20 +182,22 @@ def test_model_predict_with_nn_parallel(item_user_sequential_dataset, simple_mas
 
 @pytest.mark.torch
 def test_bert4rec_get_embeddings():
-    schema = (
-        TensorSchemaBuilder()
-        .categorical(
-            "item_id",
-            cardinality=6,
-            is_seq=True,
-            feature_hint=FeatureHint.ITEM_ID,
-        )
-        .categorical(
-            "some_feature",
-            cardinality=6,
-            is_seq=True,
-        )
-        .build()
+    schema = TensorSchema(
+        [
+            TensorFeatureInfo(
+                "item_id",
+                cardinality=6,
+                is_seq=True,
+                feature_hint=FeatureHint.ITEM_ID,
+                feature_type=FeatureType.CATEGORICAL,
+            ),
+            TensorFeatureInfo(
+                "some_feature",
+                cardinality=6,
+                is_seq=True,
+                feature_type=FeatureType.CATEGORICAL,
+            ),
+        ]
     )
     model = Bert4Rec(schema, max_seq_len=5, enable_embedding_tying=True)
     model_embeddings = model.get_all_embeddings()
@@ -274,13 +276,13 @@ def test_bert4rec_fine_tuning_on_new_items_by_appending(request, fitted_bert4rec
 
 
 @pytest.mark.torch
-def test_bert4rec_fine_tuning_save_load(fitted_bert4rec, new_items_dataset, train_loader):
+def test_bert4rec_fine_tuning_save_load(fitted_bert4rec, new_items_dataset, train_bert_loader):
     model, tokenizer = fitted_bert4rec
     trainer = L.Trainer(max_epochs=1)
     tokenizer.item_id_encoder.partial_fit(new_items_dataset)
     new_vocab_size = len(tokenizer.item_id_encoder.mapping["item_id"])
     model.set_item_embeddings_by_size(new_vocab_size)
-    trainer.fit(model, train_loader)
+    trainer.fit(model, train_bert_loader)
     trainer.save_checkpoint("bert_test.ckpt")
     best_model = Bert4Rec.load_from_checkpoint("bert_test.ckpt")
 

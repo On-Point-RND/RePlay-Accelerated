@@ -170,13 +170,6 @@ class TrainRunner(BaseRunner):
             ),
             **common_params,
         )
-        val_pred_dataloader = DataLoader(
-            dataset=PredictionDataset(
-                seq_validation_dataset,
-                max_sequence_length=self.model_cfg["model_params"]["max_seq_len"],
-            ),
-            **common_params,
-        )
         prediction_dataloader = DataLoader(
             dataset=PredictionDataset(
                 seq_test_dataset,
@@ -394,7 +387,7 @@ class TrainRunner(BaseRunner):
 
         profiler = SimpleProfiler(dirpath = self.csv_logger.log_dir, filename = 'simple_profiler')
 
-        devices = [int(self.config["env"]["CUDA_VISIBLE_DEVICES"])]
+        devices = [int(device) for device in self.config["env"]["CUDA_VISIBLE_DEVICES"].split(',')]
         trainer = L.Trainer(
             max_epochs=self.model_cfg["training_params"]["max_epochs"],
             callbacks=[checkpoint_callback, early_stopping, validation_metrics_callback],
@@ -427,6 +420,7 @@ class TrainRunner(BaseRunner):
             )
         else:
             trainer.fit(model, train_dataloader, val_dataloader)
+
 
         if self.model_name.lower() == "sasrec":
             best_model = SasRec.load_from_checkpoint(checkpoint_callback.best_model_path)
@@ -483,6 +477,12 @@ class TrainRunner(BaseRunner):
         )
         test_metrics = self.calculate_metrics(recommendations, self.raw_test_gt)
         logging.info(test_metrics)
+        recommendations.to_csv(
+            os.path.join(
+                self.config["paths"]["results_dir"],
+                f"{self.model_save_name}_{self.dataset_name}_test_preds.csv",
+            ),
+        )
         recommendations.to_csv(
             os.path.join(
                 self.config["paths"]["results_dir"],

@@ -10,6 +10,26 @@ from replay.models.nn.optimizer_utils import FatOptimizerFactory, LRSchedulerFac
 from .dataset import SasRecPredictionBatch, SasRecTrainingBatch, SasRecValidationBatch
 from .model import SasRecModel
 
+from replay.models.nn.optimizer_utils import LigerFusedLinearCrossEntropyFunction
+
+
+try:
+    import sys
+    sys.path.append("cce_loss/")
+    from cut_cross_entropy.cce import CCEParams, LinearCrossEntropyFunction, _build_flat_valids
+    from cut_cross_entropy.cce_backward import cce_backward_kernel
+    from cut_cross_entropy.cce_lse_forward import cce_lse_forward_kernel
+    from cut_cross_entropy.constants import IGNORE_INDEX
+    from cut_cross_entropy.doc import CCE_OPTS_DOC, LINEAR_CROSS_ENTROPY_DOC, add_doc_start
+    from cut_cross_entropy.indexed_dot import indexed_neg_dot_forward_kernel
+    from cut_cross_entropy.utils import (
+        _build_flat_valids,
+        _handle_eps,
+        handle_reduction_none,
+    )
+except ModuleNotFoundError:
+    print("cut_cross_entropy is not installed. CCE / CCE_minus loss cannot be used.")
+
 
 class SasRec(lightning.LightningModule):
     """
@@ -108,6 +128,7 @@ class SasRec(lightning.LightningModule):
         item_count = tensor_schema.item_id_features.item().cardinality
         assert item_count
         self._vocab_size = item_count
+        self.candidates_to_score = None
 
     def training_step(self, batch: SasRecTrainingBatch, batch_idx: int) -> torch.Tensor:
         """
@@ -122,17 +143,11 @@ class SasRec(lightning.LightningModule):
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
         return loss
 
-    def forward(self, feature_tensors: TensorMap, padding_mask: torch.BoolTensor) -> torch.Tensor:  # pragma: no cover
-        """
-        :param feature_tensors: Batch of features.
-        :param padding_mask: Padding mask where 0 - <PAD>, 1 otherwise.
-
-        :returns: Calculated scores.
-        """
-        return self._model_predict(feature_tensors, padding_mask)
-
     def predict_step(
-        self, batch: SasRecPredictionBatch, batch_idx: int, dataloader_idx: int = 0  # noqa: ARG002
+        self,
+        batch: SasRecPredictionBatch,
+        batch_idx: int,  # noqa: ARG002
+        dataloader_idx: int = 0,  # noqa: ARG002
     ) -> torch.Tensor:
         """
         :param batch: Batch of prediction data.
@@ -141,11 +156,45 @@ class SasRec(lightning.LightningModule):
 
         :returns: Calculated scores.
         """
-        batch = self._prepare_prediction_batch(batch)
+        batch = _prepare_prediction_batch(self._schema, self._model.max_len, batch)
         return self._model_predict(batch.features, batch.padding_mask)
 
+    def predict(
+        self,
+        batch: SasRecPredictionBatch,
+        candidates_to_score: Optional[torch.LongTensor] = None,
+    ) -> torch.Tensor:
+        """
+        :param batch: Batch of prediction data.
+        :param candidates_to_score: Item ids to calculate scores.
+            Default: ``None``.
+
+        :returns: Calculated scores.
+        """
+        batch = _prepare_prediction_batch(self._schema, self._model.max_len, batch)
+        return self._model_predict(batch.features, batch.padding_mask, candidates_to_score)
+
+    def forward(
+        self,
+        feature_tensors: TensorMap,
+        padding_mask: torch.BoolTensor,
+        candidates_to_score: Optional[torch.LongTensor] = None,
+    ) -> torch.Tensor:  # pragma: no cover
+        """
+        :param feature_tensors: Batch of features.
+        :param padding_mask: Padding mask where 0 - <PAD>, 1 otherwise.
+        :param candidates_to_score: Item ids to calculate scores.
+            Default: ``None``.
+
+        :returns: Calculated scores.
+        """
+        return self._model_predict(feature_tensors, padding_mask, candidates_to_score)
+
     def validation_step(
-        self, batch: SasRecValidationBatch, batch_idx: int, dataloader_idx: int = 0  # noqa: ARG002
+        self,
+        batch: SasRecValidationBatch,
+        batch_idx: int,  # noqa: ARG002
+        dataloader_idx: int = 0,  # noqa: ARG002
     ) -> torch.Tensor:
         """
         :param batch (SasRecValidationBatch): Batch of prediction data.
@@ -167,38 +216,16 @@ class SasRec(lightning.LightningModule):
         lr_scheduler = self._lr_scheduler_factory.create(optimizer)
         return [optimizer], [lr_scheduler]
 
-    def _prepare_prediction_batch(self, batch: SasRecPredictionBatch) -> SasRecPredictionBatch:
-        if batch.padding_mask.shape[1] > self._model.max_len:
-            msg = f"The length of the submitted sequence \
-                must not exceed the maximum length of the sequence. \
-                The length of the sequence is given {batch.padding_mask.shape[1]}, \
-                while the maximum length is {self._model.max_len}"
-            raise ValueError(msg)
-
-        if batch.padding_mask.shape[1] < self._model.max_len:
-            query_id, padding_mask, features = batch
-            sequence_item_count = padding_mask.shape[1]
-            for feature_name, feature_tensor in features.items():
-                if self._schema[feature_name].is_cat:
-                    features[feature_name] = torch.nn.functional.pad(
-                        feature_tensor, (self._model.max_len - sequence_item_count, 0), value=0
-                    )
-                else:
-                    features[feature_name] = torch.nn.functional.pad(
-                        feature_tensor.view(feature_tensor.size(0), feature_tensor.size(1)),
-                        (self._model.max_len - sequence_item_count, 0),
-                        value=0,
-                    ).unsqueeze(-1)
-            padding_mask = torch.nn.functional.pad(
-                padding_mask, (self._model.max_len - sequence_item_count, 0), value=0
-            )
-            batch = SasRecPredictionBatch(query_id, padding_mask, features)
-        return batch
-
-    def _model_predict(self, feature_tensors: TensorMap, padding_mask: torch.BoolTensor) -> torch.Tensor:
+    def _model_predict(
+        self,
+        feature_tensors: TensorMap,
+        padding_mask: torch.BoolTensor,
+        candidates_to_score: torch.LongTensor = None,
+    ) -> torch.Tensor:
         model: SasRecModel
         model = cast(SasRecModel, self._model.module) if isinstance(self._model, torch.nn.DataParallel) else self._model
-        scores = model.predict(feature_tensors, padding_mask)
+        candidates_to_score = self.candidates_to_score if candidates_to_score is None else candidates_to_score
+        scores = model.predict(feature_tensors, padding_mask, candidates_to_score)
         return scores
 
     def _compute_loss(self, batch: SasRecTrainingBatch) -> torch.Tensor:
@@ -208,6 +235,10 @@ class SasRec(lightning.LightningModule):
             loss_func = self._compute_loss_ce if self._loss_sample_count is None else self._compute_loss_ce_sampled
         elif self._loss_type == "SCE":
             loss_func = self._compute_loss_scalable_ce
+        elif self._loss_type == "CE_restricted":
+            loss_func = self._compute_loss_ce_restricted
+        elif self._loss_type == "CCE":
+            loss_func = self._compute_loss_cce
         else:
             msg = f"Not supported loss type: {self._loss_type}"
             raise ValueError(msg)
@@ -284,18 +315,13 @@ class SasRec(lightning.LightningModule):
         padding_mask: torch.BoolTensor,
         target_padding_mask: torch.BoolTensor,
     ) -> torch.Tensor:
-        # logits: [B x L x V]
-        logits = self._model.forward(
-            feature_tensors,
-            padding_mask,
-        )
-
+        # [B x L x V]
+        logits = self._model.forward(feature_tensors, padding_mask)
         # labels: [B x L]
         labels = positive_labels.masked_fill(mask=(~target_padding_mask), value=-100)
 
         logits_flat = logits.view(-1, logits.size(-1))  # [(B * L) x V]
         labels_flat = labels.view(-1)  # [(B * L)]
-
         loss = self._loss(logits_flat, labels_flat)
         return loss
 
@@ -333,13 +359,13 @@ class SasRec(lightning.LightningModule):
         target_padding_mask: torch.BoolTensor,
     ) -> torch.Tensor:
 
-        pad_token = feature_tensors[self._schema.item_id_feature_name].view(-1)[~padding_mask.view(-1)][0]
-        emb = self._model.forward_step(feature_tensors, padding_mask)[target_padding_mask]
+        emb = self._model.forward_step(feature_tensors, padding_mask)
         hd = torch.tensor(emb.shape[-1])
 
         x = emb.view(-1, hd)
-        y = positive_labels[target_padding_mask].view(-1)
+        y = positive_labels.view(-1)
         w = self.get_all_embeddings()["item_embedding"]
+        
 
         correct_class_logits_ = (x * torch.index_select(w, dim=0, index=y)).sum(dim=1) # (bs,)
 
@@ -353,13 +379,11 @@ class SasRec(lightning.LightningModule):
 
         with torch.no_grad():
             x_bucket = buckets @ x.T # (n_b, hd) x (hd, b) -> (n_b, b)
-            x_bucket[:, ~padding_mask[target_padding_mask].view(-1)] = float('-inf')
+            x_bucket[:, ~target_padding_mask.view(-1)] = float('-inf')
             _, top_x_bucket = torch.topk(x_bucket, dim=1, k=self._bucket_size_x) # (n_b, bs_x)
             del x_bucket
 
             y_bucket = buckets @ w.T # (n_b, hd) x (hd, n_cl) -> (n_b, n_cl)
-
-            y_bucket[:, pad_token] = float('-inf')
             _, top_y_bucket = torch.topk(y_bucket, dim=1, k=self._bucket_size_y) # (n_b, bs_y)
             del y_bucket
 
@@ -380,6 +404,159 @@ class SasRec(lightning.LightningModule):
 
         return loss
 
+    def _compute_loss_ce_restricted(
+        self,
+        feature_tensors: TensorMap,
+        positive_labels: torch.LongTensor,
+        padding_mask: torch.BoolTensor,
+        target_padding_mask: torch.BoolTensor,
+    ) -> torch.Tensor:
+        """
+        Calculate the Cross-Entropy (CE) loss restricting size of
+        out_emb and positive labels according to the target padding mask.
+        """
+
+        (logits, labels) = self._get_restricted_logits_for_ce_loss(
+                feature_tensors, positive_labels, padding_mask, target_padding_mask
+            )
+        logits_flat = logits.view(-1, logits.size(-1))  # [(B * L) x V]
+        labels_flat = labels.view(-1)  # [(B * L)]
+        loss = self._loss(logits_flat, labels_flat)
+
+        return loss
+
+    def _compute_loss_fused_linear_CE(
+        self,
+        feature_tensors: TensorMap,
+        positive_labels: torch.LongTensor,
+        padding_mask: torch.BoolTensor,
+        target_padding_mask: torch.BoolTensor
+    ) -> torch.Tensor:
+
+        output_emb = self._model.forward_step(feature_tensors, padding_mask)[target_padding_mask]
+        positive_labels = cast(
+            torch.LongTensor, torch.masked_select(positive_labels, target_padding_mask)
+        )
+
+        # Next token prediction
+        # output_emb = self._model.forward_step(feature_tensors, target_padding_mask)
+        # output_emb = output_emb[:, :-1, :][target_padding_mask[:, :-1]]
+
+        # padding_mask[:, 0] = False
+        # positive_labels = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
+
+        loss = self._loss.apply(
+            output_emb.view(-1, self._model.hidden_size),
+            self._model._head._item_embedder.get_all_item_weights(),
+            positive_labels
+        )
+
+        return loss
+
+    def _compute_loss_cce(
+        self,
+        feature_tensors: TensorMap,
+        positive_labels: torch.LongTensor,
+        padding_mask: torch.BoolTensor,
+        target_padding_mask: torch.BoolTensor
+    ) -> torch.Tensor:
+        """
+        Cut Cross-Entropy (CCE), a method that computes the cross-entropy loss 
+        without materializing the logits for all tokens into global memory.
+        The method is implemented in a custom kernel that performs the matrix multiplications 
+        and the log-sum-exp reduction over the vocabulary in flash memory, 
+        making global memory consumption for the cross-entropy computation negligible.
+
+        https://arxiv.org/abs/2411.09009
+        https://github.com/apple/ml-cross-entropy
+        """
+
+        bias = None
+        ignore_index = -100
+        softcap = None
+        reduction = "mean"
+        shift = False
+        filter_eps = "auto"
+        use_kahan = False
+        item_inds = None
+
+        e = self._model.forward_step(feature_tensors, padding_mask)
+        e = e.to(torch.float16)
+        targets = cast(torch.LongTensor, positive_labels)
+        c = self._model._head._item_embedder.get_all_item_weights()
+
+        # Next token prediction
+        # e = self._model.forward_step(feature_tensors, target_padding_mask)
+        # e = e[:, :-1, :][target_padding_mask[:, :-1]]
+        # e = e.to(torch.float16)
+        # c = self._model._head._item_embedder.get_all_item_weights()
+        # padding_mask[:, 0] = False
+        # targets = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
+
+        e = e.contiguous()
+        padding_mask = padding_mask.contiguous()
+
+        assert e.size()[0:-1] == targets.size()
+        assert e.size(-1) == c.size(1)
+        if not torch.cuda.is_bf16_supported():
+            raise RuntimeError(
+                "Cut Cross Entropy requires an ampere GPU or newer. "
+                "Consider using torch_compile_linear_cross_entropy for scenarios where one is not available."
+            )
+
+        batch_shape = targets.size()
+
+        shift = int(shift)
+        valids = _build_flat_valids(targets, ignore_index, shift)
+        
+        e = e.flatten(0, -2)
+        targets = targets.flatten()
+
+        if (targets.data_ptr() % 16) != 0:
+            targets = torch.nn.functional.pad(targets, (0, 1))[:-1]
+
+        assert (targets.data_ptr() % 16) == 0
+
+        if self._loss_sample_count is not None:
+            filter_eps = None
+            n_negative_samples = self._loss_sample_count
+            vocab_size = self._vocab_size
+            device = padding_mask.device
+            
+            masked_batch_seq_size = targets.size(0)
+            # probs = torch.ones((masked_batch_seq_size, vocab_size), device=device)
+            # ids = torch.arange(masked_batch_seq_size, dtype=torch.long, device=device)
+            # probs[ids, targets] = 0.0
+            # negative_labels = torch.multinomial(probs, num_samples=n_negative_samples, replacement=False)
+
+            negative_labels = torch.randint(
+                low=0,
+                high=vocab_size,
+                size=(masked_batch_seq_size, n_negative_samples),
+                dtype=torch.long,
+                device=device,
+            )
+            
+            item_inds = torch.hstack([targets.view(-1, 1), negative_labels])
+
+
+        params = CCEParams(
+            targets,
+            valids,
+            softcap,
+            reduction,
+            _handle_eps(filter_eps, e.dtype),
+            shift,
+            batch_shape,
+            use_kahan,
+            item_inds
+        ) 
+      
+        loss = self._loss.apply(e, c.to(e.dtype), bias, params)
+        assert isinstance(loss, torch.Tensor)
+
+        return loss
+
     def _get_sampled_logits(
         self,
         feature_tensors: TensorMap,
@@ -395,6 +572,15 @@ class SasRec(lightning.LightningModule):
         masked_batch_seq_size = positive_labels.size(0)
         device = padding_mask.device
         output_emb = self._model.forward_step(feature_tensors, padding_mask)[target_padding_mask]
+
+        # Next token prediction
+        # output_emb = self._model.forward_step(feature_tensors, target_padding_mask)
+        # output_emb = output_emb[:, :-1, :][target_padding_mask[:, :-1]]
+        # padding_mask[:, 0] = False
+        # positive_labels = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
+        # masked_batch_seq_size = positive_labels.size(0)
+        # device = padding_mask.device
+
 
         positive_labels = cast(torch.LongTensor, positive_labels.view(-1, 1))
         ids = torch.arange(masked_batch_seq_size, dtype=torch.long, device=device)
@@ -460,12 +646,42 @@ class SasRec(lightning.LightningModule):
 
         return (positive_logits, negative_logits, positive_labels, negative_labels, vocab_size)
 
+    def _get_restricted_logits_for_ce_loss(
+        self,
+        feature_tensors: TensorMap,
+        positive_labels: torch.LongTensor,
+        padding_mask: torch.BoolTensor,
+        target_padding_mask: torch.BoolTensor
+    ):
+        device = padding_mask.device
+        positive_labels = cast(
+            torch.LongTensor, torch.masked_select(positive_labels, target_padding_mask)
+        )  # (masked_batch_seq_size,)
+        output_emb = self._model.forward_step(feature_tensors, padding_mask)
+        output_emb = output_emb[target_padding_mask]
+
+        # Next token prediction
+        # output_emb = self._model.forward_step(feature_tensors, target_padding_mask)
+        # output_emb = output_emb[:, :-1, :][target_padding_mask[:, :-1]]
+
+        # padding_mask[:, 0] = False
+        # positive_labels = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
+
+        logits = self._model.get_logits_for_restricted_loss(output_emb)
+        return (logits, positive_labels)
+        
     def _create_loss(self) -> Union[torch.nn.BCEWithLogitsLoss, torch.nn.CrossEntropyLoss]:
         if self._loss_type == "BCE":
             return torch.nn.BCEWithLogitsLoss(reduction="sum")
 
-        if self._loss_type == "CE" or self._loss_type == "SCE":
+        if self._loss_type == "CE" or self._loss_type == "SCE" or self._loss_type == "CE_restricted":
             return torch.nn.CrossEntropyLoss()
+
+        if self._loss_type == "fused_linear_CE":
+            return LigerFusedLinearCrossEntropyFunction()
+
+        if self._loss_type == "CCE":
+            return LinearCrossEntropyFunction()
 
         msg = "Not supported loss_type"
         raise NotImplementedError(msg)
@@ -570,6 +786,31 @@ class SasRec(lightning.LightningModule):
             msg = f"Expected optimizer_factory of type OptimizerFactory, got {type(optimizer_factory)}"
             raise ValueError(msg)
 
+    @property
+    def candidates_to_score(self) -> Union[torch.LongTensor, None]:
+        """
+        Returns tensor of item ids to calculate scores.
+        """
+        return self._candidates_to_score
+
+    @candidates_to_score.setter
+    def candidates_to_score(self, candidates: Optional[torch.LongTensor] = None) -> None:
+        """
+        Sets tensor of item ids to calculate scores.
+        :param candidates: Tensor of item ids to calculate scores.
+        """
+        total_item_count = self._model.item_count
+        if isinstance(candidates, torch.Tensor) and candidates.dtype is torch.long:
+            if 0 < candidates.shape[0] <= total_item_count:
+                self._candidates_to_score = candidates
+            else:
+                msg = f"Expected candidates length to be between 1 and {total_item_count=}"
+                raise ValueError(msg)
+        elif candidates is not None:
+            msg = f"Expected candidates to be of type torch.LongTensor or None, gpt {type(candidates)}"
+            raise ValueError(msg)
+        self._candidates_to_score = candidates
+
     def _set_new_item_embedder_to_model(self, new_embedding: torch.nn.Embedding, new_vocab_size: int):
         self._model.item_embedder.item_emb = new_embedding
         self._model._head._item_embedder = self._model.item_embedder
@@ -580,3 +821,34 @@ class SasRec(lightning.LightningModule):
         self._schema.item_id_features[self._schema.item_id_feature_name]._set_cardinality(
             new_embedding.weight.data.shape[0] - 1
         )
+
+
+def _prepare_prediction_batch(
+    schema: TensorSchema, max_len: int, batch: SasRecPredictionBatch
+) -> SasRecPredictionBatch:
+    if batch.padding_mask.shape[1] > max_len:
+        msg = (
+            "The length of the submitted sequence "
+            "must not exceed the maximum length of the sequence. "
+            f"The length of the sequence is given {batch.padding_mask.shape[1]}, "
+            f"while the maximum length is {max_len}"
+        )
+        raise ValueError(msg)
+
+    if batch.padding_mask.shape[1] < max_len:
+        query_id, padding_mask, features = batch
+        sequence_item_count = padding_mask.shape[1]
+        for feature_name, feature_tensor in features.items():
+            if schema[feature_name].is_cat:
+                features[feature_name] = torch.nn.functional.pad(
+                    feature_tensor, (max_len - sequence_item_count, 0), value=0
+                )
+            else:
+                features[feature_name] = torch.nn.functional.pad(
+                    feature_tensor.view(feature_tensor.size(0), feature_tensor.size(1)),
+                    (max_len - sequence_item_count, 0),
+                    value=0,
+                ).unsqueeze(-1)
+        padding_mask = torch.nn.functional.pad(padding_mask, (max_len - sequence_item_count, 0), value=0)
+        batch = SasRecPredictionBatch(query_id, padding_mask, features)
+    return batch

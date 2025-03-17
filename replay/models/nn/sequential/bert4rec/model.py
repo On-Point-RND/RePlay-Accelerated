@@ -6,9 +6,12 @@ from typing import Dict, Optional, Union
 import torch
 import torch.nn as nn
 
-from bitsandbytes.triton.int8_matmul_mixed_dequantize import int8_matmul_mixed_dequantize
-from bitsandbytes.triton.quantize_rowwise import quantize_rowwise
-from bitsandbytes.triton.triton_utils import is_triton_available
+try:
+    from bitsandbytes.triton.int8_matmul_mixed_dequantize import int8_matmul_mixed_dequantize
+    from bitsandbytes.triton.quantize_rowwise import quantize_rowwise
+    from bitsandbytes.triton.triton_utils import is_triton_available
+except ModuleNotFoundError:
+    print("bitsandbytes is not installed. SwitchBack cannot be used.")
 
 from replay.data.nn import TensorFeatureInfo, TensorMap, TensorSchema
 
@@ -162,6 +165,18 @@ class Bert4RecModel(torch.nn.Module):
         :returns: Logits for each element in `item_ids`.
         """
         return self._head(out_embeddings, item_ids)
+
+    def get_logits_for_restricted_loss(self, out_embeddings: torch.Tensor, item_ids: Optional[torch.LongTensor] = None) -> torch.Tensor:
+        """
+        Apply head to output embeddings of `forward_step`.
+
+        :param out_embeddings: Embeddings after `forward step`.
+        :param item_ids: Item ids to calculate scores.
+            Default: ``None``.
+
+        :returns: Logits for each element in `item_ids`.
+        """
+        return self._head.forward_for_restricted_loss(out_embeddings, item_ids)
 
     def get_query_embeddings(self, inputs: TensorMap, pad_mask: torch.BoolTensor, token_mask: torch.BoolTensor):
         """
@@ -389,6 +404,22 @@ class BaseHead(ABC, torch.nn.Module):
 
         logits = torch.matmul(out_embeddings, item_embeddings.t()) + bias
         return logits
+
+    def forward_for_restricted_loss(
+        self,
+        out_embeddings: torch.Tensor,
+        item_ids: Optional[torch.LongTensor] = None,           
+    ) -> torch.Tensor:
+        
+        item_embeddings = self.get_item_embeddings()
+        bias = self.get_bias()
+        if item_ids is not None:
+            item_embeddings = item_embeddings[item_ids]
+            bias = bias[item_ids]
+
+        logits = torch.nn.functional.linear(out_embeddings, item_embeddings, bias)        
+        return logits                
+
 
     @abstractmethod
     def get_item_embeddings(self) -> torch.Tensor:  # pragma: no cover

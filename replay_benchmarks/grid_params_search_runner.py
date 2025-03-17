@@ -331,7 +331,7 @@ class GridParamsSearchRunner(BaseRunner):
         self.logger.info(f"Max allocated memory: {max_allocated} GB")
 
 
-    def _run_one_launch(self, indeces, train_dataloader, val_dataloader, val_pred_dataloader, prediction_dataloader):
+    def _run_one_launch(self, train_dataloader, val_dataloader, val_pred_dataloader, prediction_dataloader):
 
         self.logger.info("Initializing model...")
         model = self._initialize_model()
@@ -596,12 +596,12 @@ class GridParamsSearchRunner(BaseRunner):
                                             continue
                                 
                                     ### main train launch ###
-                                    self._run_one_launch(indeces=(batch_size_i, sample_count_i, max_seq_len_i),
-                                                            train_dataloader=train_dataloader, 
-                                                            val_dataloader=val_dataloader, 
-                                                            val_pred_dataloader=val_pred_dataloader, 
-                                                            prediction_dataloader=prediction_dataloader
-                                                            )
+                                    self._run_one_launch(
+                                                        train_dataloader=train_dataloader, 
+                                                        val_dataloader=val_dataloader, 
+                                                        val_pred_dataloader=val_pred_dataloader, 
+                                                        prediction_dataloader=prediction_dataloader,
+                                                        )
                                     #########################
                                     
                                     add_info = {
