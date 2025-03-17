@@ -536,6 +536,10 @@ class SasRec(lightning.LightningModule):
                 dtype=torch.long,
                 device=device,
             )
+
+            reject_labels_mask = targets.view(-1, 1) == negative_labels
+            negative_labels[reject_labels_mask] = vocab_size - 1
+         
             
             item_inds = torch.hstack([targets.view(-1, 1), negative_labels])
 
