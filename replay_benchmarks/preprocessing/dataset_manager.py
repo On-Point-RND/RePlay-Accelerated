@@ -258,6 +258,7 @@ class DatasetManager:
             divide_column=self.user_column,
             query_column=self.user_column,
             strategy="interactions",
+            timestamp_column=self.timestamp_column,
         )
 
         train, raw_test = global_splitter.split(interactions)

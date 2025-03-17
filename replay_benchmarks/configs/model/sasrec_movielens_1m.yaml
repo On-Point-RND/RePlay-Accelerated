@@ -4,13 +4,13 @@ model:
 
   params:
     model_params:
-      block_count: 1
-      head_count: 1
-      max_seq_len: 100
+      block_count: 2
+      head_count: 2
+      max_seq_len: null
       hidden_size: 128
       dropout_rate: 0.35
       loss_type: CE # CE, BCE, SCE
-      loss_sample_count: 200
+      loss_sample_count: null
       n_buckets: 443
       bucket_size_x: 443
       bucket_size_y: 512
@@ -19,8 +19,8 @@ model:
       embedding_dim: 128
       learning_rate: 0.0003
       weight_decay: 0.01
-      batch_size: 256
+      batch_size: null
       num_workers: 4
-      patience: 4
+      patience: 5
       max_epochs: 20
       precision: 16-mixed #default 32, bf16-mixed
