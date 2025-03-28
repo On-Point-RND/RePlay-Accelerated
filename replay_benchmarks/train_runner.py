@@ -26,6 +26,7 @@ from replay.metrics import (
     Coverage,
     Surprisal,
 )
+from replay.data.nn import SequenceTokenizer
 from replay.metrics.torch_metrics_builder import metrics_to_df
 from replay.models.nn.sequential import SasRec, Bert4Rec
 from replay.models.nn.optimizer_utils import FatOptimizerFactory
@@ -53,6 +54,7 @@ class TrainRunner(BaseRunner):
         self.raw_test_gt = None
         self.seq_val_dataset = None
         self.seq_test_dataset = None
+        self.popularity_distribution = None
 
         # Loggers
         self.log_dir = (Path(config["paths"]["log_dir"]) / self.dataset_name / self.model_save_name)
@@ -102,7 +104,12 @@ class TrainRunner(BaseRunner):
         model_config.update(self.model_cfg["model_params"])
 
         if "sasrec" in self.model_name.lower():
-            return SasRec(**model_config, optimizer_factory=optimizer_factory)
+            print(self.popularity_distribution)
+            return SasRec(
+                **model_config,
+                optimizer_factory=optimizer_factory,
+                popularity_distribution=self.popularity_distribution,
+            )
         elif "bert4rec" in self.model_name.lower():
             if self.config.get("acceleration"):
                 if self.config["acceleration"].get("model"):
@@ -229,12 +236,29 @@ class TrainRunner(BaseRunner):
         self.seq_val_dataset = seq_validation_dataset
         self.seq_test_dataset = seq_test_dataset
 
+        if self.model_cfg['model_params']['negative_sampling_strategy'] == 'popularity':
+            self.popularity_distribution = self._compute_tokenized_popularity(
+                train_dataset._interactions, self.tokenizer
+            )
+
         return self._prepare_dataloaders(
             seq_train_dataset,
             seq_validation_dataset,
             seq_validation_gt,
             seq_test_dataset,
         )
+
+    def _compute_tokenized_popularity(self, train_events: pd.DataFrame, tokenizer: SequenceTokenizer) -> torch.Tensor:
+        item_counts = train_events[self.item_column].value_counts()
+        item_counts_df = item_counts.index.to_frame(index=False)
+        item_counts_df.columns = [self.item_column]
+
+        tokenized_items = tokenizer.item_id_encoder.transform(item_counts_df)[self.item_column].values
+
+        pop_dist = torch.zeros(len(tokenizer.item_id_encoder.mapping[self.item_column]), dtype=torch.float32)
+        pop_dist[tokenized_items] = torch.tensor(item_counts.values, dtype=torch.float32)
+
+        return pop_dist / pop_dist.sum()
 
     def calculate_metrics(self, predictions, ground_truth, test_events=None):
         """Calculate and return the desired metrics based on the predictions."""

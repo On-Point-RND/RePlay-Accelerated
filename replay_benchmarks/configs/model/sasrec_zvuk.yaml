@@ -10,6 +10,7 @@ model:
       hidden_size: 256
       dropout_rate: 0.1
       loss_type: CE # CE, BCE, SCE, CCE
+      negative_sampling_strategy: global_uniform  # popularity
       loss_sample_count: 500
       n_buckets: 443
       bucket_size_x: 443

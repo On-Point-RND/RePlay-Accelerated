@@ -31,6 +31,12 @@ try:
 except ModuleNotFoundError:
     print("cut_cross_entropy is not installed. CCE / CCE_minus loss cannot be used.")
 
+try:
+    from kernels.multinomial_sampling.cuda_multinomial_loader import cuda_multinomial
+except ModuleNotFoundError:
+    print("cuda_multinomial is not built or not found.")
+    cuda_multinomial = None
+
 
 class SasRec(lightning.LightningModule):
     """
@@ -60,6 +66,7 @@ class SasRec(lightning.LightningModule):
         mix_x: bool = False,
         optimizer_factory: OptimizerFactory = FatOptimizerFactory(),
         lr_scheduler_factory: Optional[LRSchedulerFactory] = None,
+        popularity_distribution: Optional[torch.Tensor] = None,
     ):
         """
         :param tensor_schema: Tensor schema of features.
@@ -99,6 +106,8 @@ class SasRec(lightning.LightningModule):
             Default: ``FatOptimizerFactory``.
         :param lr_scheduler_factory: Learning rate schedule factory.
             Default: ``None``.
+        :param popularity_distribution: Popularity distribution of item catalog used for popularity sampling.
+            Default: ``None``.
         """
         super().__init__()
         self.save_hyperparameters()
@@ -120,16 +129,18 @@ class SasRec(lightning.LightningModule):
         self._lr_scheduler_factory = lr_scheduler_factory
         self._loss = self._create_loss()
         self._schema = tensor_schema
-        self._n_buckets = n_buckets
-        self._bucket_size_x = bucket_size_x
-        self._bucket_size_y = bucket_size_y
-        self._mix_x = mix_x
-        assert negative_sampling_strategy in {"global_uniform", "inbatch"}
+        assert negative_sampling_strategy in {"global_uniform", "inbatch", "popularity"}
 
         item_count = tensor_schema.item_id_features.item().cardinality
         assert item_count
         self._vocab_size = item_count
         self.candidates_to_score = None
+
+        if popularity_distribution is not None:
+            assert popularity_distribution.shape[0] == item_count, "Popularity distribution size mismatch"
+            self._popularity_distribution = popularity_distribution
+        else:
+            self._popularity_distribution = None
 
     def training_step(self, batch: SasRecTrainingBatch, batch_idx: int) -> torch.Tensor:
         """
@@ -529,19 +540,26 @@ class SasRec(lightning.LightningModule):
             # ids = torch.arange(masked_batch_seq_size, dtype=torch.long, device=device)
             # probs[ids, targets] = 0.0
             # negative_labels = torch.multinomial(probs, num_samples=n_negative_samples, replacement=False)
-
-            negative_labels = torch.randint(
-                low=0,
-                high=vocab_size,
-                size=(masked_batch_seq_size, n_negative_samples),
-                dtype=torch.long,
-                device=device,
-            )
+            
+            if self._negative_sampling_strategy == "global_uniform":
+                negative_labels = torch.randint(
+                    low=0,
+                    high=vocab_size,
+                    size=(masked_batch_seq_size, n_negative_samples),
+                    dtype=torch.long,
+                    device=device,
+                )
+            elif self._negative_sampling_strategy == "popularity":
+                multinomial_sample_distribution = self._popularity_distribution.to(device)
+                negative_labels = custom_multinomial_sample(
+                    multinomial_sample_distribution,
+                    batch_size=masked_batch_seq_size,
+                    num_samples=n_negative_samples,
+                )
 
             reject_labels_mask = targets.view(-1, 1) == negative_labels
             negative_labels[reject_labels_mask] = vocab_size
-         
-            
+
             item_inds = torch.hstack([targets.view(-1, 1), negative_labels])
 
 
@@ -605,6 +623,10 @@ class SasRec(lightning.LightningModule):
                 multinomial_sample_distribution = torch.ones(vocab_size, device=device)
             else:
                 multinomial_sample_distribution = torch.softmax(positive_logits, dim=-1)
+        elif self._negative_sampling_strategy == "popularity":
+            vocab_size = self._vocab_size
+            multinomial_sample_distribution = self._popularity_distribution.to(device)
+            positive_logits = self._model.get_logits(output_emb, positive_labels)
         else:
             msg = f"Unknown negative sampling strategy: {self._negative_sampling_strategy}"
             raise NotImplementedError(msg)
@@ -625,6 +647,12 @@ class SasRec(lightning.LightningModule):
                 dtype=torch.long,
                 device=device,
             )
+        elif self._negative_sampling_strategy == "popularity":
+            negative_labels = custom_multinomial_sample(
+                multinomial_sample_distribution,
+                batch_size=masked_batch_seq_size,
+                num_samples=n_negative_samples,
+            )
         else:
             negative_labels = torch.multinomial(
                 multinomial_sample_distribution,
@@ -633,7 +661,7 @@ class SasRec(lightning.LightningModule):
             )
         negative_labels = cast(torch.LongTensor, negative_labels)
 
-        if self._negative_sampling_strategy == "global_uniform":
+        if self._negative_sampling_strategy in ["global_uniform", "popularity"]:
             if self._negatives_sharing:
                 unique_negative_labels, negative_labels_indices = negative_labels.unique(return_inverse=True)
                 negative_labels_indices = negative_labels_indices.view(masked_batch_seq_size, n_negative_samples)
@@ -857,3 +885,12 @@ def _prepare_prediction_batch(
         padding_mask = torch.nn.functional.pad(padding_mask, (max_len - sequence_item_count, 0), value=0)
         batch = SasRecPredictionBatch(query_id, padding_mask, features)
     return batch
+
+def custom_multinomial_sample(probs: torch.Tensor, batch_size: int, num_samples: int) -> torch.Tensor:
+    if cuda_multinomial is None:
+        raise RuntimeError("CUDA multinomial kernel not available.")
+
+    rand_vals = torch.rand((batch_size, num_samples), device=probs.device)
+    out = torch.empty((batch_size, num_samples), dtype=torch.long, device=probs.device)
+    cuda_multinomial.forward(probs.contiguous(), rand_vals, out, probs.numel(), num_samples)
+    return out
