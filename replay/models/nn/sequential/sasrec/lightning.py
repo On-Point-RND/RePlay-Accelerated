@@ -493,6 +493,10 @@ class SasRec(lightning.LightningModule):
         # padding_mask[:, 0] = False
         # targets = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
 
+        if self._loss_sample_count is not None:
+            targets = targets[target_padding_mask]
+            e = e[target_padding_mask]
+
         e = e.contiguous()
         padding_mask = padding_mask.contiguous()
 
@@ -538,7 +542,8 @@ class SasRec(lightning.LightningModule):
             )
 
             reject_labels_mask = targets.view(-1, 1) == negative_labels
-            negative_labels[reject_labels_mask] = vocab_size - 1
+            # negative_labels[reject_labels_mask] = vocab_size - 1
+            negative_labels[reject_labels_mask] = vocab_size
          
             
             item_inds = torch.hstack([targets.view(-1, 1), negative_labels])
