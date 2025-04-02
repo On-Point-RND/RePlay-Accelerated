@@ -31,11 +31,11 @@ try:
 except ModuleNotFoundError:
     print("cut_cross_entropy is not installed. CCE / CCE_minus loss cannot be used.")
 
-try:
-    from kernels.multinomial_sampling.cuda_multinomial_loader import cuda_multinomial
-except ModuleNotFoundError:
-    print("cuda_multinomial is not built or not found.")
-    cuda_multinomial = None
+# try:
+#     from kernels.multinomial_sampling.cuda_multinomial_loader import cuda_multinomial
+# except ModuleNotFoundError:
+#     print("cuda_multinomial is not built or not found.")
+#     cuda_multinomial = None
 
 
 class SasRec(lightning.LightningModule):
@@ -549,13 +549,13 @@ class SasRec(lightning.LightningModule):
                     dtype=torch.long,
                     device=device,
                 )
-            elif self._negative_sampling_strategy == "popularity":
-                multinomial_sample_distribution = self._popularity_distribution.to(device)
-                negative_labels = custom_multinomial_sample(
-                    multinomial_sample_distribution,
-                    batch_size=masked_batch_seq_size,
-                    num_samples=n_negative_samples,
-                )
+            # elif self._negative_sampling_strategy == "popularity":
+            #     multinomial_sample_distribution = self._popularity_distribution.to(device)
+            #     negative_labels = custom_multinomial_sample(
+            #         multinomial_sample_distribution,
+            #         batch_size=masked_batch_seq_size,
+            #         num_samples=n_negative_samples,
+            #     )
 
             reject_labels_mask = targets.view(-1, 1) == negative_labels
             negative_labels[reject_labels_mask] = vocab_size
@@ -647,12 +647,12 @@ class SasRec(lightning.LightningModule):
                 dtype=torch.long,
                 device=device,
             )
-        elif self._negative_sampling_strategy == "popularity":
-            negative_labels = custom_multinomial_sample(
-                multinomial_sample_distribution,
-                batch_size=masked_batch_seq_size,
-                num_samples=n_negative_samples,
-            )
+        # elif self._negative_sampling_strategy == "popularity":
+        #     negative_labels = custom_multinomial_sample(
+        #         multinomial_sample_distribution,
+        #         batch_size=masked_batch_seq_size,
+        #         num_samples=n_negative_samples,
+        #     )
         else:
             negative_labels = torch.multinomial(
                 multinomial_sample_distribution,
@@ -886,11 +886,11 @@ def _prepare_prediction_batch(
         batch = SasRecPredictionBatch(query_id, padding_mask, features)
     return batch
 
-def custom_multinomial_sample(probs: torch.Tensor, batch_size: int, num_samples: int) -> torch.Tensor:
-    if cuda_multinomial is None:
-        raise RuntimeError("CUDA multinomial kernel not available.")
+# def custom_multinomial_sample(probs: torch.Tensor, batch_size: int, num_samples: int) -> torch.Tensor:
+#     if cuda_multinomial is None:
+#         raise RuntimeError("CUDA multinomial kernel not available.")
 
-    rand_vals = torch.rand((batch_size, num_samples), device=probs.device)
-    out = torch.empty((batch_size, num_samples), dtype=torch.long, device=probs.device)
-    cuda_multinomial.forward(probs.contiguous(), rand_vals, out, probs.numel(), num_samples)
-    return out
+#     rand_vals = torch.rand((batch_size, num_samples), device=probs.device)
+#     out = torch.empty((batch_size, num_samples), dtype=torch.long, device=probs.device)
+#     cuda_multinomial.forward(probs.contiguous(), rand_vals, out, probs.numel(), num_samples)
+#     return out

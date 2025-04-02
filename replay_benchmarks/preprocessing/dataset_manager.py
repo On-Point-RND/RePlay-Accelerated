@@ -310,7 +310,7 @@ class DatasetManager:
         )
         validation_events, validation_gt = loo_splitter.split(val)
         test_gt = test_gt[test_gt[self.item_column].isin(train_events[self.item_column])]
-        test_gt = test_gt[test_gt[self.user_column].isin(train_events[self.user_column])]
+        test_gt = test_gt[test_gt[self.user_column].isin(test_events[self.user_column])]
 
         return {
             "train": train_events,
