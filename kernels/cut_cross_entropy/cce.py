@@ -1,4 +1,5 @@
 # Copyright (C) 2024 Apple Inc. All Rights Reserved.
+# This software includes modifications
 from dataclasses import dataclass
 from typing import cast
 
