@@ -58,6 +58,10 @@ class SasRec(lightning.LightningModule):
         bucket_size_x: int = 100,
         bucket_size_y: int = 100,
         mix_x: bool = False,
+        n_buckets: int = 100,
+        bucket_size_x: int = 100,
+        bucket_size_y: int = 100,
+        mix_x: bool = False,
         optimizer_factory: OptimizerFactory = FatOptimizerFactory(),
         lr_scheduler_factory: Optional[LRSchedulerFactory] = None,
         popularity_distribution: Optional[torch.Tensor] = None,
@@ -96,6 +100,14 @@ class SasRec(lightning.LightningModule):
             Default: ``100``
         :param mix_x: Mix states embeddings with random matrix for SCE loss.
             Default: ``False``
+        :param n_buckets: Number of buckets for SCE loss.
+            Default: ``100``
+        :param bucket_size_x: Size of x buckets for SCE loss.
+            Default: ``100``
+        :param bucket_size_y: Size of y buckets for SCE loss.
+            Default: ``100``
+        :param mix_x: Mix states embeddings with random matrix for SCE loss.
+            Default: ``False``
         :param optimizer_factory: Optimizer factory.
             Default: ``FatOptimizerFactory``.
         :param lr_scheduler_factory: Learning rate schedule factory.
@@ -123,6 +135,11 @@ class SasRec(lightning.LightningModule):
         self._lr_scheduler_factory = lr_scheduler_factory
         self._loss = self._create_loss()
         self._schema = tensor_schema
+        self._n_buckets = n_buckets
+        self._bucket_size_x = bucket_size_x
+        self._bucket_size_y = bucket_size_y
+        self._mix_x = mix_x
+        assert negative_sampling_strategy in {"global_uniform", "inbatch"}
         assert negative_sampling_strategy in {"global_uniform", "inbatch", "popularity"}
 
         item_count = tensor_schema.item_id_features.item().cardinality
@@ -245,6 +262,12 @@ class SasRec(lightning.LightningModule):
             loss_func = self._compute_loss_ce_restricted
         elif self._loss_type == "CCE":
             loss_func = self._compute_loss_cce
+        elif self._loss_type == "SCE":
+            loss_func = self._compute_loss_scalable_ce
+        elif self._loss_type == "CE_restricted":
+            loss_func = self._compute_loss_ce_restricted
+        elif self._loss_type == "CCE":
+            loss_func = self._compute_loss_cce
         else:
             msg = f"Not supported loss type: {self._loss_type}"
             raise ValueError(msg)
@@ -321,6 +344,8 @@ class SasRec(lightning.LightningModule):
         padding_mask: torch.BoolTensor,
         target_padding_mask: torch.BoolTensor,
     ) -> torch.Tensor:
+        # [B x L x V]
+        logits = self._model.forward(feature_tensors, padding_mask)
         # [B x L x V]
         logits = self._model.forward(feature_tensors, padding_mask)
         # labels: [B x L]
@@ -694,12 +719,44 @@ class SasRec(lightning.LightningModule):
         logits = self._model.get_logits_for_restricted_loss(output_emb)
         return (logits, positive_labels)
         
+
+    def _get_restricted_logits_for_ce_loss(
+        self,
+        feature_tensors: TensorMap,
+        positive_labels: torch.LongTensor,
+        padding_mask: torch.BoolTensor,
+        target_padding_mask: torch.BoolTensor
+    ):
+        device = padding_mask.device
+        positive_labels = cast(
+            torch.LongTensor, torch.masked_select(positive_labels, target_padding_mask)
+        )  # (masked_batch_seq_size,)
+        output_emb = self._model.forward_step(feature_tensors, padding_mask)
+        output_emb = output_emb[target_padding_mask]
+
+        # Next token prediction
+        # output_emb = self._model.forward_step(feature_tensors, target_padding_mask)
+        # output_emb = output_emb[:, :-1, :][target_padding_mask[:, :-1]]
+
+        # padding_mask[:, 0] = False
+        # positive_labels = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
+
+        logits = self._model.get_logits_for_restricted_loss(output_emb)
+        return (logits, positive_labels)
+        
     def _create_loss(self) -> Union[torch.nn.BCEWithLogitsLoss, torch.nn.CrossEntropyLoss]:
         if self._loss_type == "BCE":
             return torch.nn.BCEWithLogitsLoss(reduction="sum")
 
         if self._loss_type == "CE" or self._loss_type == "SCE" or self._loss_type == "CE_restricted":
+        if self._loss_type == "CE" or self._loss_type == "SCE" or self._loss_type == "CE_restricted":
             return torch.nn.CrossEntropyLoss()
+
+        if self._loss_type == "fused_linear_CE":
+            return LigerFusedLinearCrossEntropyFunction()
+
+        if self._loss_type == "CCE":
+            return LinearCrossEntropyFunction()
 
         if self._loss_type == "fused_linear_CE":
             return LigerFusedLinearCrossEntropyFunction()
