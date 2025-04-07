@@ -31,12 +31,6 @@ try:
 except ModuleNotFoundError:
     print("cut_cross_entropy is not installed. CCE / CCE_minus loss cannot be used.")
 
-try:
-    from kernels.multinomial_sampling.cuda_multinomial_loader import cuda_multinomial
-except ModuleNotFoundError:
-    print("cuda_multinomial is not built or not found.")
-    cuda_multinomial = None
-
 
 class SasRec(lightning.LightningModule):
     """
@@ -473,12 +467,13 @@ class SasRec(lightning.LightningModule):
         target_padding_mask: torch.BoolTensor
     ) -> torch.Tensor:
         """
-        Cut Cross-Entropy (CCE), a method that computes the cross-entropy loss 
+        Cut Cross-Entropy (CCE) and Cut Cross-Entropy with Negative Sampling (CCE-),
+        methods that computes the cross-entropy loss, 
         without materializing the logits for all tokens into global memory.
-        The method is implemented in a custom kernel that performs the matrix multiplications 
-        and the log-sum-exp reduction over the vocabulary in flash memory, 
-        making global memory consumption for the cross-entropy computation negligible.
+        The method is implemented in custom Triton kernels.
 
+
+        Cut Cross Entropy for LLM is presented in
         https://arxiv.org/abs/2411.09009
         https://github.com/apple/ml-cross-entropy
         """
@@ -504,6 +499,10 @@ class SasRec(lightning.LightningModule):
         # c = self._model._head._item_embedder.get_all_item_weights()
         # padding_mask[:, 0] = False
         # targets = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
+
+        if self._loss_sample_count is not None:
+            targets = targets[target_padding_mask]
+            e = e[target_padding_mask]
 
         e = e.contiguous()
         padding_mask = padding_mask.contiguous()
@@ -548,13 +547,6 @@ class SasRec(lightning.LightningModule):
                     size=(masked_batch_seq_size, n_negative_samples),
                     dtype=torch.long,
                     device=device,
-                )
-            elif self._negative_sampling_strategy == "popularity":
-                multinomial_sample_distribution = self._popularity_distribution.to(device)
-                negative_labels = custom_multinomial_sample(
-                    multinomial_sample_distribution,
-                    batch_size=masked_batch_seq_size,
-                    num_samples=n_negative_samples,
                 )
 
             reject_labels_mask = targets.view(-1, 1) == negative_labels
@@ -603,7 +595,6 @@ class SasRec(lightning.LightningModule):
         # positive_labels = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
         # masked_batch_seq_size = positive_labels.size(0)
         # device = padding_mask.device
-
 
         positive_labels = cast(torch.LongTensor, positive_labels.view(-1, 1))
         ids = torch.arange(masked_batch_seq_size, dtype=torch.long, device=device)
@@ -885,12 +876,3 @@ def _prepare_prediction_batch(
         padding_mask = torch.nn.functional.pad(padding_mask, (max_len - sequence_item_count, 0), value=0)
         batch = SasRecPredictionBatch(query_id, padding_mask, features)
     return batch
-
-def custom_multinomial_sample(probs: torch.Tensor, batch_size: int, num_samples: int) -> torch.Tensor:
-    if cuda_multinomial is None:
-        raise RuntimeError("CUDA multinomial kernel not available.")
-
-    rand_vals = torch.rand((batch_size, num_samples), device=probs.device)
-    out = torch.empty((batch_size, num_samples), dtype=torch.long, device=probs.device)
-    cuda_multinomial.forward(probs.contiguous(), rand_vals, out, probs.numel(), num_samples)
-    return out
