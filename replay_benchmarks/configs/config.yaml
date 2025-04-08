@@ -1,6 +1,6 @@
 defaults:
-  - dataset: movielens_20m
-  - model: sasrec_movielens_20m
+  - dataset: movielens_1m
+  - model: sasrec_movielens_1m
   - mode: train
   - acceleration: null
 
@@ -15,6 +15,7 @@ paths:
   log_dir: "replay_benchmarks/artifacts/logs/"
   checkpoint_dir: "replay_benchmarks/artifacts/checkpoints/"
   results_dir: "replay_benchmarks/artifacts/results/"
+  main_csv_res_dir: "replay_benchmarks/artifacts"
 
 metrics:
   types:

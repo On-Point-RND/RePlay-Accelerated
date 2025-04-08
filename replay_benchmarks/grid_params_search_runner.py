@@ -479,26 +479,11 @@ class GridParamsSearchRunner(BaseRunner):
             latest_version_path = os.path.join(base_path, f'version_{latest_version_number}')
             return Path(latest_version_path)
             
-        train_metrics_logs = pd.read_csv(find_latest_version_path(self.log_dir / "csv_logs/lightning_logs") / "metrics.csv")
         simple_profiler_path = find_latest_version_path(self.log_dir / "csv_logs/lightning_logs") / "fit-simple_profiler.txt"
         memory_results = pd.read_csv(self.res_dir / "memory_stats.csv")
         test_metrics = pd.read_csv(self.res_dir / "test_metrics.csv")
 
         combined_row = {}
-
-        train_loss_epoch = np.round(train_metrics_logs['train_loss_epoch'].dropna().tolist(), 3)
-        train_loss_step = np.round(train_metrics_logs['train_loss_step'].dropna().tolist(), 3)
-        train_loss_epoch_str = ' '.join(map(str, train_loss_epoch))
-        train_loss_step_str = ' '.join(map(str, train_loss_step))
-        
-        print(train_metrics_logs)
-
-        print(train_loss_epoch)
-        
-        print(train_loss_step)
-
-        combined_row['train_loss_epoch_val'] = train_loss_epoch_str if train_loss_epoch_str else "null"
-        combined_row['train_loss_step_val'] = train_loss_step_str if train_loss_step_str else "null"
 
         with open(simple_profiler_path, 'r') as file:
             content = file.read()
@@ -556,12 +541,12 @@ class GridParamsSearchRunner(BaseRunner):
                         new_seed = self.config["env"]["SEED"] + launch_number
                         seed_everything(new_seed)
                         
-                        if (self.config["mode"]["loss_type"]=='SCE'):
+                        if (self.model_cfg["model_params"]["loss_type"]=='SCE'):
                             n_bucket = bucket_size_x = int(2.0 * (batch_size * self.dataset_seq_len) ** 0.5)
                             self.model_cfg["model_params"]["bucket_size_x"] = bucket_size_x
                             self.model_cfg["model_params"]["bucket_size_y"] = loss_sample_count
                             self.model_cfg["model_params"]["n_buckets"] = n_bucket
-                        else: # CE, BCE, ARCFACE loss function
+                        else: # CE, CCE, BCE, ARCFACE loss function
                             self.model_cfg["model_params"]["loss_sample_count"] = loss_sample_count 
                         
                         self.model_save_name = self.model_name+f"_{batch_size=}_{loss_sample_count=}_{max_seq_len=}_{launch_number=}"
