@@ -52,6 +52,9 @@ loss_sample_count: <number_of_negative_samples>
 ```
 If `loss_sample_count: null`, the training will use the standard CCE method.
 
+To reproduce CE- grid search results, we provide a special trainer. It is available in `replay_benchmarks/grid_params_search_runner.py`. To set a grid for grid-search, you can modify the `replay_benchmarks/configs/mode/hyperparameter_experiment.yaml` file. Additionally, you need to change the usage mode in the main config (`replay_benchmarks/configs/config.yaml`). There, the parameter `mode: train` should be changed to `mode: hyperparameter_experiment`.
+
+The `hyperparameter_experiment.yaml` configuration is used solely to iterate over `batch_size`, `max_seq_len`, and `loss_sample_count`. To change other parameters, you need to modify them in their respective configuration files.
 
 ## Acknowledgements 
 This repository is build upon the [RePlay repository]
