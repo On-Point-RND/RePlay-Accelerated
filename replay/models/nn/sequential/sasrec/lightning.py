@@ -58,10 +58,6 @@ class SasRec(lightning.LightningModule):
         bucket_size_x: int = 100,
         bucket_size_y: int = 100,
         mix_x: bool = False,
-        n_buckets: int = 100,
-        bucket_size_x: int = 100,
-        bucket_size_y: int = 100,
-        mix_x: bool = False,
         optimizer_factory: OptimizerFactory = FatOptimizerFactory(),
         lr_scheduler_factory: Optional[LRSchedulerFactory] = None,
         popularity_distribution: Optional[torch.Tensor] = None,
@@ -748,7 +744,6 @@ class SasRec(lightning.LightningModule):
         if self._loss_type == "BCE":
             return torch.nn.BCEWithLogitsLoss(reduction="sum")
 
-        if self._loss_type == "CE" or self._loss_type == "SCE" or self._loss_type == "CE_restricted":
         if self._loss_type == "CE" or self._loss_type == "SCE" or self._loss_type == "CE_restricted":
             return torch.nn.CrossEntropyLoss()
 
