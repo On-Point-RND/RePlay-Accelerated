@@ -18,6 +18,8 @@ pip install --no-cache-dir --upgrade pip wheel poetry==1.5.1 poetry-dynamic-vers
 After installing replay, it is required to update torch and install additional packages:
 ```bash
 pip install --upgrade torch==2.5.1
+pip install --upgrade pytorch-lightning==2.5.1
+pip install numpy==1.24.4
 pip install rs_datasets
 pip install -U tensorboard
 ```
@@ -48,7 +50,7 @@ To use CCE-, specify the following configuration:
 loss_type: CCE
 loss_sample_count: <number_of_negative_samples>
 ```
-If `loss_sample_count: null`, the training will use the standard CCE loss.
+If `loss_sample_count: null`, the training will use the standard CCE method.
 
 
 ## Acknowledgements 
