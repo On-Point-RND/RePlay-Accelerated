@@ -2,7 +2,7 @@
 <br>
 
 This repository is a fork of the RePlay library, containing implementation Cut Cross Entropy (CCE) and Cut Cross Entropy with Negative Sampling (CCE-) for RecSys. Triton kernels are available in 
-`kernels/cut_cross_entropy`. Implementation of SASRec with CCE and CCE- can be found in `replay/models/nn/sequential/sasrec/lightning.py`. Experiment pipeline is located in `replay_benchmarks`.
+`kernels/cut_cross_entropy`. Implementation of SASRec with CCE and CCE- can be found in `replay/models/nn/sequential/sasrec/lightning.py`. Experiment pipeline is located in `src_benchmarks`.
 
 <a name="installation"></a>
 ## Installation
@@ -52,7 +52,7 @@ loss_sample_count: <number_of_negative_samples>
 ```
 If `loss_sample_count: null`, the training will use the standard CCE method.
 
-To reproduce CE- grid search results, we provide a special trainer. It is available in `replay_benchmarks/grid_params_search_runner.py`. To set a grid for grid-search, you can modify the `replay_benchmarks/configs/mode/hyperparameter_experiment.yaml` file. Additionally, you need to change the usage mode in the main config (`replay_benchmarks/configs/config.yaml`). There, the parameter `mode: train` should be changed to `mode: hyperparameter_experiment`.
+To reproduce CE- grid search results, we provide a special trainer. It is available in `src_benchmarks/grid_params_search_runner.py`. To set a grid for grid-search, you can modify the `src_benchmarks/configs/mode/hyperparameter_experiment.yaml` file. Additionally, you need to change the usage mode in the main config (`src_benchmarks/configs/config.yaml`). There, the parameter `mode: train` should be changed to `mode: hyperparameter_experiment`.
 
 The `hyperparameter_experiment.yaml` configuration is used solely to iterate over `batch_size`, `max_seq_len`, and `loss_sample_count`. To change other parameters, you need to modify them in their respective configuration files.
 

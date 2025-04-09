@@ -1,0 +1,8 @@
+mode:
+  name: hyperparameter_experiment
+
+  max_seq_len: [32, 64, 128, 256, 512, 1024]
+  loss_sample_count: [32, 64, 128, 256, 512, 1024, 1512, 2048]
+  batch_size: [16, 32, 64, 128, 256, 512, 1024]
+  number_launches: 1
+
