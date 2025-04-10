@@ -1,6 +1,0 @@
-mode:
-  name: train
-
-  profiler:
-    enabled: false
-    row_limit: 5

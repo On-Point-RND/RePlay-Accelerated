@@ -1,9 +1,0 @@
-mode: 
-  name: infer
-
-  trainer_params:
-    batch_size: 256
-    num_workers: 4
-
-  top_k: [1, 10, 20, 100]
-  output_format: "pandas"
