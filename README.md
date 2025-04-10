@@ -1,7 +1,4 @@
-<img src="docs/images/src_logo_color.svg" height="50"/>
-<br>
-
-This repository is a fork of the src library, containing implementation Cut Cross Entropy (CCE) and Cut Cross Entropy with Negative Sampling (CCE-) for RecSys. Triton kernels are available in 
+This repository containing implementation Cut Cross Entropy (CCE) and Cut Cross Entropy with Negative Sampling (CCE-) for RecSys. Triton kernels are available in 
 `kernels/cut_cross_entropy`. Implementation of SASRec with CCE and CCE- can be found in `src/models/nn/sequential/sasrec/lightning.py`. Experiment pipeline is located in `src_benchmarks`.
 
 <a name="installation"></a>
