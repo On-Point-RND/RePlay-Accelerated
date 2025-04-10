@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 from torch.profiler import profile, ProfilerActivity
 
 from src_benchmarks.base_runner import BaseRunner
-from replay.metrics import (
+from src.metrics import (
     OfflineMetrics,
     Recall,
     Precision,
@@ -26,24 +26,19 @@ from replay.metrics import (
     Coverage,
     Surprisal,
 )
-from replay.data.nn import SequenceTokenizer
-from replay.metrics.torch_metrics_builder import metrics_to_df
-from replay.models.nn.sequential import SasRec, Bert4Rec
-from replay.models.nn.optimizer_utils import FatOptimizerFactory
-from replay.models.nn.sequential.callbacks import (
+from src.data.nn import SequenceTokenizer
+from src.metrics.torch_metrics_builder import metrics_to_df
+from src.models.nn.sequential import SasRec
+from src.models.nn.optimizer_utils import FatOptimizerFactory
+from src.models.nn.sequential.callbacks import (
     ValidationMetricsCallback,
     PandasPredictionCallback,
 )
-from replay.models.nn.sequential.postprocessors import RemoveSeenItems
-from replay.models.nn.sequential.sasrec import (
+from src.models.nn.sequential.postprocessors import RemoveSeenItems
+from src.models.nn.sequential.sasrec import (
     SasRecTrainingDataset,
     SasRecValidationDataset,
     SasRecPredictionDataset,
-)
-from replay.models.nn.sequential.bert4rec import (
-    Bert4RecTrainingDataset,
-    Bert4RecValidationDataset,
-    Bert4RecPredictionDataset,
 )
 
 
@@ -79,27 +74,11 @@ class TrainRunner(BaseRunner):
             "tensor_schema": self.tensor_schema,
         }
 
-        if trial:
-            search_space = self.config["optuna"]["search_space"][self.model_name]
-
-            model_config.update({
-                "block_count": trial.suggest_categorical("block_count", search_space["block_count"]),
-                "head_count": trial.suggest_categorical("head_count", search_space["head_count"]),
-                "hidden_size": trial.suggest_categorical("hidden_size", search_space["hidden_size"]),
-                "max_seq_len": trial.suggest_categorical("max_seq_len", search_space["max_seq_len"]),
-                "dropout_rate": trial.suggest_float("dropout_rate", float(min(search_space["dropout_rate"])), float(max(search_space["dropout_rate"])), step=0.05),
-                "loss_type": trial.suggest_categorical("loss_type", search_space["loss_type"]),
-            })
-
-            optimizer_factory = FatOptimizerFactory(
-                learning_rate=trial.suggest_float("learning_rate", float(min(search_space["learning_rate"])), float(max(search_space["learning_rate"])), log=True),
-                weight_decay=trial.suggest_float("weight_decay", float(min(search_space["weight_decay"])), float(max(search_space["weight_decay"])), log=True),
-            )
-        else:
-            optimizer_factory = FatOptimizerFactory(
-                learning_rate=self.model_cfg["training_params"]["learning_rate"],
-                weight_decay=self.model_cfg["training_params"].get("weight_decay", 0.0),
-            )
+        
+        optimizer_factory = FatOptimizerFactory(
+            learning_rate=self.model_cfg["training_params"]["learning_rate"],
+            weight_decay=self.model_cfg["training_params"].get("weight_decay", 0.0),
+        )
 
         model_config.update(self.model_cfg["model_params"])
 
@@ -110,11 +89,6 @@ class TrainRunner(BaseRunner):
                 optimizer_factory=optimizer_factory,
                 popularity_distribution=self.popularity_distribution,
             )
-        elif "bert4rec" in self.model_name.lower():
-            if self.config.get("acceleration"):
-                if self.config["acceleration"].get("model"):
-                    model_config.update(self.config["acceleration"]["model"])
-            return Bert4Rec(**model_config, optimizer_factory=optimizer_factory)
         else:
             raise ValueError(f"Unsupported model type: {self.model_name}")
 
@@ -133,11 +107,6 @@ class TrainRunner(BaseRunner):
                 SasRecTrainingDataset,
                 SasRecValidationDataset,
                 SasRecPredictionDataset,
-            ),
-            "bert4rec": (
-                Bert4RecTrainingDataset,
-                Bert4RecValidationDataset,
-                Bert4RecPredictionDataset,
             ),
         }
 
@@ -236,29 +205,12 @@ class TrainRunner(BaseRunner):
         self.seq_val_dataset = seq_validation_dataset
         self.seq_test_dataset = seq_test_dataset
 
-        if self.model_cfg['model_params']['negative_sampling_strategy'] == 'popularity':
-            self.popularity_distribution = self._compute_tokenized_popularity(
-                train_dataset._interactions, self.tokenizer
-            )
-
         return self._prepare_dataloaders(
             seq_train_dataset,
             seq_validation_dataset,
             seq_validation_gt,
             seq_test_dataset,
         )
-
-    def _compute_tokenized_popularity(self, train_events: pd.DataFrame, tokenizer: SequenceTokenizer) -> torch.Tensor:
-        item_counts = train_events[self.item_column].value_counts()
-        item_counts_df = item_counts.index.to_frame(index=False)
-        item_counts_df.columns = [self.item_column]
-
-        tokenized_items = tokenizer.item_id_encoder.transform(item_counts_df)[self.item_column].values
-
-        pop_dist = torch.zeros(len(tokenizer.item_id_encoder.mapping[self.item_column]), dtype=torch.float32)
-        pop_dist[tokenized_items] = torch.tensor(item_counts.values, dtype=torch.float32)
-
-        return pop_dist / pop_dist.sum()
 
     def calculate_metrics(self, predictions, ground_truth, test_events=None):
         """Calculate and return the desired metrics based on the predictions."""
@@ -411,10 +363,6 @@ class TrainRunner(BaseRunner):
 
         if self.model_name.lower() == "sasrec":
             best_model = SasRec.load_from_checkpoint(
-                checkpoint_callback.best_model_path
-            )
-        elif self.model_name.lower() == "bert4rec":
-            best_model = Bert4Rec.load_from_checkpoint(
                 checkpoint_callback.best_model_path
             )
         self.save_model(trainer, best_model)

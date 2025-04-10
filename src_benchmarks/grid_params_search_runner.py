@@ -23,7 +23,7 @@ from torch.profiler import profile, ProfilerActivity
 
 from src_benchmarks.utils.conf import seed_everything
 from src_benchmarks.base_runner import BaseRunner
-from replay.metrics import (
+from src.metrics import (
     OfflineMetrics,
     Recall,
     Precision,
@@ -34,23 +34,18 @@ from replay.metrics import (
     Coverage,
     Surprisal,
 )
-from replay.metrics.torch_metrics_builder import metrics_to_df
-from replay.models.nn.sequential import SasRec, Bert4Rec
-from replay.models.nn.optimizer_utils import FatOptimizerFactory
-from replay.models.nn.sequential.callbacks import (
+from src.metrics.torch_metrics_builder import metrics_to_df
+from src.models.nn.sequential import SasRec
+from src.models.nn.optimizer_utils import FatOptimizerFactory
+from src.models.nn.sequential.callbacks import (
     ValidationMetricsCallback,
     PandasPredictionCallback,
 )
-from replay.models.nn.sequential.postprocessors import RemoveSeenItems
-from replay.models.nn.sequential.sasrec import (
+from src.models.nn.sequential.postprocessors import RemoveSeenItems
+from src.models.nn.sequential.sasrec import (
     SasRecTrainingDataset,
     SasRecValidationDataset,
     SasRecPredictionDataset,
-)
-from replay.models.nn.sequential.bert4rec import (
-    Bert4RecTrainingDataset,
-    Bert4RecValidationDataset,
-    Bert4RecPredictionDataset,
 )
 
 
@@ -116,11 +111,6 @@ class GridParamsSearchRunner(BaseRunner):
 
         if "sasrec" in self.model_name.lower():
             return SasRec(**model_config, optimizer_factory=optimizer_factory)
-        elif "bert4rec" in self.model_name.lower():
-            if self.config.get("acceleration"):
-                if self.config["acceleration"].get("model"):
-                    model_config.update(self.config["acceleration"]["model"])
-            return Bert4Rec(**model_config, optimizer_factory=optimizer_factory)
         else:
             raise ValueError(f"Unsupported model type: {self.model_name}")
 
@@ -139,12 +129,7 @@ class GridParamsSearchRunner(BaseRunner):
                 SasRecTrainingDataset,
                 SasRecValidationDataset,
                 SasRecPredictionDataset,
-            ),
-            "bert4rec": (
-                Bert4RecTrainingDataset,
-                Bert4RecValidationDataset,
-                Bert4RecPredictionDataset,
-            ),
+            )
         }
 
         datasets = dataset_mapping.get(self.model_name.lower())
@@ -380,8 +365,6 @@ class GridParamsSearchRunner(BaseRunner):
 
         if self.model_name.lower() == "sasrec":
             best_model = SasRec.load_from_checkpoint(checkpoint_callback.best_model_path)
-        elif self.model_name.lower() == "bert4rec":
-            best_model = Bert4Rec.load_from_checkpoint(checkpoint_callback.best_model_path)
         self.save_model(trainer, best_model)
 
         self.logger.info("Evaluating on val set...")

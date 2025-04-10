@@ -22,5 +22,5 @@ model:
       batch_size: 256
       num_workers: 4
       patience: 4
-      max_epochs: 20
+      max_epochs: 1
       precision: 16-mixed # null

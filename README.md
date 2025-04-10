@@ -1,8 +1,8 @@
-<img src="docs/images/replay_logo_color.svg" height="50"/>
+<img src="docs/images/src_logo_color.svg" height="50"/>
 <br>
 
-This repository is a fork of the RePlay library, containing implementation Cut Cross Entropy (CCE) and Cut Cross Entropy with Negative Sampling (CCE-) for RecSys. Triton kernels are available in 
-`kernels/cut_cross_entropy`. Implementation of SASRec with CCE and CCE- can be found in `replay/models/nn/sequential/sasrec/lightning.py`. Experiment pipeline is located in `src_benchmarks`.
+This repository is a fork of the src library, containing implementation Cut Cross Entropy (CCE) and Cut Cross Entropy with Negative Sampling (CCE-) for RecSys. Triton kernels are available in 
+`kernels/cut_cross_entropy`. Implementation of SASRec with CCE and CCE- can be found in `src/models/nn/sequential/sasrec/lightning.py`. Experiment pipeline is located in `src_benchmarks`.
 
 <a name="installation"></a>
 ## Installation
@@ -15,7 +15,7 @@ pip install --no-cache-dir --upgrade pip wheel poetry==1.5.1 poetry-dynamic-vers
 ./poetry_wrapper.sh install --all-extras
 
 ```
-After installing replay, it is required to update torch and install additional packages:
+After installing src, it is required to update torch and install additional packages:
 ```bash
 pip install --upgrade torch==2.5.1
 pip install --upgrade pytorch-lightning==2.5.1
@@ -27,7 +27,7 @@ pip install -U tensorboard
 <a name="examples"></a>
 ## Usage
 
-To run the experiments for training SASRec, use the following command from the RePlay-Accelerated directory:
+To run the experiments for training SASRec, use the following command from the src-Accelerated directory:
 ```bash
 python main.py
 ```
@@ -57,7 +57,7 @@ To reproduce CE- grid search results, we provide a special trainer. It is availa
 The `hyperparameter_experiment.yaml` configuration is used solely to iterate over `batch_size`, `max_seq_len`, and `loss_sample_count`. To change other parameters, you need to modify them in their respective configuration files.
 
 ## Acknowledgements 
-This repository is build upon the [RePlay repository]
-(https://github.com/sb-ai-lab/RePlay/tree/main). Triton kernels is based on the code of [ml-cross-entropy](
+This repository is build upon the [src repository]
+(https://github.com/sb-ai-lab/src/tree/main). Triton kernels is based on the code of [ml-cross-entropy](
 https://github.com/apple/ml-cross-entropy/tree/main).
 

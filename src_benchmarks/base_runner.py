@@ -6,7 +6,7 @@ from typing import Tuple
 import pandas as pd
 
 from src_benchmarks.preprocessing import DatasetManager
-from replay.data import (
+from src.data import (
     FeatureHint,
     FeatureInfo,
     FeatureSchema,
@@ -14,8 +14,8 @@ from replay.data import (
     FeatureType,
     Dataset,
 )
-from replay.utils import DataFrameLike
-from replay.data.nn import (
+from src.utils import DataFrameLike
+from src.data.nn import (
     SequenceTokenizer,
     SequentialDataset,
     TensorFeatureSource,

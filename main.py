@@ -7,7 +7,7 @@ import yaml
 import argparse
 
 from src_benchmarks.utils.conf import load_config, seed_everything
-from src_benchmarks import TrainRunner, InferRunner, GridParamsSearchRunner
+from src_benchmarks import TrainRunner, GridParamsSearchRunner
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,10 +25,8 @@ def main() -> None:
     seed_everything(config["env"]["SEED"])
     logging.info(f"Fixing seed: {config['env']['SEED']}")
 
-    if config["mode"]["name"] in ["train", "optimize"]:
+    if config["mode"]["name"] in ["train"]:
         runner = TrainRunner(config)
-    elif config["mode"]["name"] == "infer":
-        runner = InferRunner(config)
     elif config["mode"]["name"] == "hyperparameter_experiment":
         runner = GridParamsSearchRunner(config)
     else:

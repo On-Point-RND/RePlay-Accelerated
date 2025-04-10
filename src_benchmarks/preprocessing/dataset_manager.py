@@ -9,8 +9,8 @@ import json
 
 from rs_datasets import MovieLens, Netflix
 
-from replay.splitters import TimeSplitter, LastNSplitter, ColdUserRandomSplitter
-from replay.preprocessing.filters import MinCountFilter
+from src.splitters import TimeSplitter, LastNSplitter, ColdUserRandomSplitter
+from src.preprocessing.filters import MinCountFilter
 
 DATASET_MAPPINGS = {
     "zvuk": {"kaggle": "alexxl/zvuk-dataset", "file": "zvuk-interactions.parquet"},
@@ -159,8 +159,8 @@ class DatasetManager:
         kaggle_dataset = kaggle_info["kaggle"]
         raw_data_file = os.path.join(data_path, kaggle_info["file"])
 
-        os.environ.setdefault("KAGGLE_USERNAME", "recsysaccelerate")
-        os.environ.setdefault("KAGGLE_KEY", "6363e91b656fea576c39e4f55dcc1d00")
+        os.environ.setdefault("KAGGLE_USERNAME", "...")
+        os.environ.setdefault("KAGGLE_KEY", "...")
 
         api = KaggleApi()
         api.authenticate()
@@ -168,25 +168,7 @@ class DatasetManager:
         api.dataset_download_files(kaggle_dataset, path=data_path, unzip=True)
         logging.info(f"Dataset downloaded and extracted to {data_path}")
 
-        if dataset_name == "yelp":
-            prime = []
-            for line in open(raw_data_file, "r", encoding="UTF-8"):
-                val = json.loads(line)
-                prime.append(
-                    [val[self.user_column], val["business_id"], val["stars"], val["date"]]
-                )
-            interactions = pd.DataFrame(
-                prime,
-                columns=[
-                    self.user_column,
-                    self.item_column,
-                    self.config["dataset"]["feature_schema"]["rating_column"],
-                    self.timestamp_column,
-                ],
-            )
-            interactions["timestamp"] = pd.to_datetime(interactions["timestamp"])
-        else:
-            interactions = pd.read_parquet(raw_data_file)
+        interactions = pd.read_parquet(raw_data_file)
         interactions[self.timestamp_column] = interactions[
             self.timestamp_column
         ].astype("int64")
@@ -208,29 +190,6 @@ class DatasetManager:
                 interactions[self.config["dataset"]["feature_schema"]["rating_column"]]
                 > self.config["dataset"]["preprocess"]["min_rating"]
             ]
-        elif dataset_name == "netflix":
-            netflix = Netflix(path=data_path)
-            interactions = (
-                pd.concat([netflix.train, netflix.test])
-                .fillna(5)
-                .reset_index(drop=True)
-            )
-            interactions = interactions[
-                interactions[self.config["dataset"]["feature_schema"]["rating_column"]]
-                > self.config["dataset"]["preprocess"]["min_rating"]
-            ]
-            interactions = interactions.sort_values(
-                by=[self.user_column, self.timestamp_column]
-            )
-            interactions[self.timestamp_column] = pd.to_datetime(
-                interactions[self.timestamp_column]
-            )
-            interactions[self.timestamp_column] += pd.to_timedelta(
-                interactions.groupby(
-                    [self.user_column, self.timestamp_column]
-                ).cumcount(),
-                unit="s",
-            )
         else:
             raise ValueError(f"Unsupported dataset: {dataset_name}")
 
