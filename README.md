@@ -1,27 +1,15 @@
 This repository containing implementation Cut Cross Entropy (CCE) and Cut Cross Entropy with Negative Sampling (CCE-) for RecSys. Triton kernels are available in 
 `kernels/cut_cross_entropy`. Implementation of SASRec with CCE and CCE- can be found in `src/models/nn/sequential/sasrec/lightning.py`. Experiment pipeline is located in `src_benchmarks`.
 
-<a name="installation"></a>
 ## Installation
 
-Installation via `poetry` package manager is recommended by default:
+Installation via Docker is recommended by default:
 
 ```bash
-pip install --no-cache-dir --upgrade pip wheel poetry==1.5.1 poetry-dynamic-versioning \
-    && python -m poetry config virtualenvs.create false
-./poetry_wrapper.sh install --all-extras
-
-```
-After installing src, it is required to update torch and install additional packages:
-```bash
-pip install --upgrade torch==2.5.1
-pip install --upgrade pytorch-lightning==2.5.1
-pip install numpy==1.24.4
-pip install rs_datasets
-pip install -U tensorboard
+docker build -t src_project .
+docker run -it src_project
 ```
 
-<a name="examples"></a>
 ## Usage
 
 To run the experiments for training SASRec, use the following command from the src-Accelerated directory:
