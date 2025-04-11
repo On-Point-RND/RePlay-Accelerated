@@ -1,7 +1,8 @@
+## 🎨 SRC_PROJECT
 This repository containing implementation Cut Cross Entropy (CCE) and Cut Cross Entropy with Negative Sampling (CCE-) for RecSys. Triton kernels are available in 
 `kernels/cut_cross_entropy`. Implementation of SASRec with CCE and CCE- can be found in `src/models/nn/sequential/sasrec/lightning.py`. Experiment pipeline is located in `src_benchmarks`.
 
-## Installation
+## 🚀 Getting Started
 
 Installation via Docker is recommended by default:
 
@@ -10,39 +11,90 @@ docker build -t src_project .
 docker run -it src_project
 ```
 
-## Usage
+### 🐳 Docker Setup for Project
+This repository includes a Dockerfile for building a development environment with:
+- PyTorch 2.5.1 + CUDA 12.4 + cuDNN 9
+- Python 3.10 (from the PyTorch base image)
+- Java 11 (OpenJDK)
 
-To run the experiments for training SASRec, use the following command from the src-Accelerated directory:
+### 📦 Installed System Packages (apt)
+The following system dependencies are installed in the image:
+- apt-utils – base utility for apt
+- build-essential – compiler and toolchain (required by some Python packages)
+- libgomp1 – OpenMP support library (used by numpy and other libs)
+- pandoc – required for Lightning logs or documentation exports
+- git – for cloning repos or versioning
+- openjdk-11 – manually copied from the slim OpenJDK image
+
+### 🧪 Python Packages (pip)
+Installed Python packages with pinned versions:
+```plaintext
+  numpy==1.24.4
+  lightning==2.5.1
+  pandas==1.5.3
+  polars==1.0.0
+  optuna==3.2.0
+  scipy==1.9.3
+  psutil==6.0.0
+  scikit-learn==1.3.2
+  pyarrow==16.0.0
+  torch==2.5.1
+  rs_datasets==0.5.1
+  Ninja==1.11.1.1
+  tensorboard==2.19.0
+```
+## ⚙️ Running Experiments with SASRec
+### Quickstart
+To run the experiments for training SASRec, use the following command from the project directory:
 ```bash
 python main.py
 ```
+### 📁 Configuration
+All experiment parameters are defined using .yaml configuration files located in the `src_benchmarks/configs` directory.
+The main configuration file is `src_benchmarks/configs/config.yaml`, where you specify the dataset and model:
 
-Experiment parameters are defined in `.yaml` files located in the configs directory. 
-The dataset name is specified in the `config.yaml` file as follows:
-
-Parameters for the experiments are defined by `.yaml` files in `configs` directory.
-Name of the dataset in determined in the file `config.yaml`:
-```
+```yaml
 defaults:
   - dataset: <dataset_name>
   - model: sasrec_<dataset_name>
 ```
-The following datasets are available `movielens_20m`, `beauty`, `30music`, `zvuk`, `megamarket`. 
 
-Parameters for SASRec are defined in the sasrec_<dataset_name>.yaml files. 
-To use CCE-, specify the following configuration:
-```
-loss_type: CCE
-loss_sample_count: <number_of_negative_samples>
+**Available datasets:** 
+- movielens_20m
+- beauty
+- 30music
+- zvuk
+- megamarket
+- gowalla
+
+Each dataset have a corresponding config file, e.g., `src_benchmarks/configs/dataset/movielens_20m.yaml`.
+
+### ⚙️ Custom Loss Configuration
+To use CCE- loss, include the following parameters in the model config (sasrec_<dataset_name>.yaml):
+```yaml
+- loss_type: CCE
+- loss_sample_count: <number_of_negative_samples>
 ```
 If `loss_sample_count: null`, the training will use the standard CCE method.
 
-To reproduce CE- grid search results, we provide a special trainer. It is available in `src_benchmarks/grid_params_search_runner.py`. To set a grid for grid-search, you can modify the `src_benchmarks/configs/mode/hyperparameter_experiment.yaml` file. Additionally, you need to change the usage mode in the main config (`src_benchmarks/configs/config.yaml`). There, the parameter `mode: train` should be changed to `mode: hyperparameter_experiment`.
+### 🔍 Reproducing CE- Grid Search
+We provide a dedicated trainer for grid search, located at:
+```bash
+src_benchmarks/grid_params_search_runner.py
+```
+To configure a hyperparameter grid:
+1. Modify the file:
+`src_benchmarks/configs/mode/hyperparameter_experiment.yaml`
+(This controls the grid over `batch_size`, `max_seq_len`, and `loss_sample_count`.)
+2. Set the mode to "hyperparameter_experiment" in:
+`src_benchmarks/configs/config.yaml`
 
-The `hyperparameter_experiment.yaml` configuration is used solely to iterate over `batch_size`, `max_seq_len`, and `loss_sample_count`. To change other parameters, you need to modify them in their respective configuration files.
+```yaml
+defaults:
+  ...
+  - mode: hyperparameter_experiment
+```
 
-## Acknowledgements 
-This repository is build upon the [src repository]
-(https://github.com/sb-ai-lab/src/tree/main). Triton kernels is based on the code of [ml-cross-entropy](
-https://github.com/apple/ml-cross-entropy/tree/main).
+> 💡**P.S.** To adjust other training parameters, edit them in their respective config files (e.g., `src_benchmarks/configs/model/sasrec_movielens_20m.yaml`), not in `hyperparameter_experiment.yaml`.
+
 
