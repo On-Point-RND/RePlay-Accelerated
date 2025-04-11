@@ -44,7 +44,7 @@ Installed Python packages with pinned versions:
   tensorboard==2.19.0
 ```
 ## ⚙️ Running Experiments with SASRec
-### Quickstart
+### ⚡️ Quickstart
 To run the experiments for training SASRec, use the following command from the project directory:
 ```bash
 python main.py
