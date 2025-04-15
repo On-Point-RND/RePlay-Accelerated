@@ -10,14 +10,23 @@ RUN update-alternatives --install /usr/bin/java java /usr/local/openjdk-11/bin/j
 
 WORKDIR /home
 
-RUN pip install --no-cache-dir --upgrade pip wheel poetry==1.5.1 poetry-dynamic-versioning \
-    && python -m poetry config virtualenvs.create false
-COPY . RePlay-Accelerated/
-RUN cd RePlay-Accelerated && ./poetry_wrapper.sh install --all-extras
+RUN pip install --no-cache-dir --upgrade pip wheel
+COPY . project_src/
+WORKDIR /home/project_src
 
-RUN pip install --upgrade torch==2.5.1
-RUN pip install rs_datasets
+RUN pip install numpy==1.24.4 \
+    lightning==2.5.1 \
+    pandas==1.5.3 \
+    polars==1.0.0 \
+    optuna==3.2.0 \
+    scipy==1.9.3 \
+    psutil==6.0.0 \
+    scikit-learn==1.3.2 \
+    pyarrow==16.0.0
+
+RUN pip install torch==2.5.1
+RUN pip install rs_datasets==0.5.1
 RUN pip install Ninja==1.11.1.1
-RUN pip install -U tensorboard
+RUN pip install -U tensorboard==2.19.0
 
 CMD ["bash"]

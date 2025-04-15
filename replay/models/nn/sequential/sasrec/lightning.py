@@ -136,7 +136,6 @@ class SasRec(lightning.LightningModule):
         self._bucket_size_y = bucket_size_y
         self._mix_x = mix_x
         assert negative_sampling_strategy in {"global_uniform", "inbatch"}
-        assert negative_sampling_strategy in {"global_uniform", "inbatch", "popularity"}
 
         item_count = tensor_schema.item_id_features.item().cardinality
         assert item_count
@@ -254,8 +253,6 @@ class SasRec(lightning.LightningModule):
             loss_func = self._compute_loss_ce if self._loss_sample_count is None else self._compute_loss_ce_sampled
         elif self._loss_type == "SCE":
             loss_func = self._compute_loss_scalable_ce
-        elif self._loss_type == "CE_restricted":
-            loss_func = self._compute_loss_ce_restricted
         elif self._loss_type == "CCE":
             loss_func = self._compute_loss_cce
         else:
@@ -334,8 +331,6 @@ class SasRec(lightning.LightningModule):
         padding_mask: torch.BoolTensor,
         target_padding_mask: torch.BoolTensor,
     ) -> torch.Tensor:
-        # [B x L x V]
-        logits = self._model.forward(feature_tensors, padding_mask)
         # [B x L x V]
         logits = self._model.forward(feature_tensors, padding_mask)
         # labels: [B x L]
@@ -422,27 +417,6 @@ class SasRec(lightning.LightningModule):
         loss.scatter_reduce_(0, top_x_bucket.view(-1), loss_, reduce='amax', include_self=False)
         loss = loss[loss != 0]
         loss = torch.mean(loss)
-
-        return loss
-
-    def _compute_loss_ce_restricted(
-        self,
-        feature_tensors: TensorMap,
-        positive_labels: torch.LongTensor,
-        padding_mask: torch.BoolTensor,
-        target_padding_mask: torch.BoolTensor,
-    ) -> torch.Tensor:
-        """
-        Calculate the Cross-Entropy (CE) loss restricting size of
-        out_emb and positive labels according to the target padding mask.
-        """
-
-        (logits, labels) = self._get_restricted_logits_for_ce_loss(
-                feature_tensors, positive_labels, padding_mask, target_padding_mask
-            )
-        logits_flat = logits.view(-1, logits.size(-1))  # [(B * L) x V]
-        labels_flat = labels.view(-1)  # [(B * L)]
-        loss = self._loss(logits_flat, labels_flat)
 
         return loss
 
@@ -684,61 +658,12 @@ class SasRec(lightning.LightningModule):
             positive_logits = positive_logits[ids, positive_labels_indices.T].T
 
         return (positive_logits, negative_logits, positive_labels, negative_labels, vocab_size)
-
-    def _get_restricted_logits_for_ce_loss(
-        self,
-        feature_tensors: TensorMap,
-        positive_labels: torch.LongTensor,
-        padding_mask: torch.BoolTensor,
-        target_padding_mask: torch.BoolTensor
-    ):
-        device = padding_mask.device
-        positive_labels = cast(
-            torch.LongTensor, torch.masked_select(positive_labels, target_padding_mask)
-        )  # (masked_batch_seq_size,)
-        output_emb = self._model.forward_step(feature_tensors, padding_mask)
-        output_emb = output_emb[target_padding_mask]
-
-        # Next token prediction
-        # output_emb = self._model.forward_step(feature_tensors, target_padding_mask)
-        # output_emb = output_emb[:, :-1, :][target_padding_mask[:, :-1]]
-
-        # padding_mask[:, 0] = False
-        # positive_labels = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
-
-        logits = self._model.get_logits_for_restricted_loss(output_emb)
-        return (logits, positive_labels)
-        
-
-    def _get_restricted_logits_for_ce_loss(
-        self,
-        feature_tensors: TensorMap,
-        positive_labels: torch.LongTensor,
-        padding_mask: torch.BoolTensor,
-        target_padding_mask: torch.BoolTensor
-    ):
-        device = padding_mask.device
-        positive_labels = cast(
-            torch.LongTensor, torch.masked_select(positive_labels, target_padding_mask)
-        )  # (masked_batch_seq_size,)
-        output_emb = self._model.forward_step(feature_tensors, padding_mask)
-        output_emb = output_emb[target_padding_mask]
-
-        # Next token prediction
-        # output_emb = self._model.forward_step(feature_tensors, target_padding_mask)
-        # output_emb = output_emb[:, :-1, :][target_padding_mask[:, :-1]]
-
-        # padding_mask[:, 0] = False
-        # positive_labels = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
-
-        logits = self._model.get_logits_for_restricted_loss(output_emb)
-        return (logits, positive_labels)
         
     def _create_loss(self) -> Union[torch.nn.BCEWithLogitsLoss, torch.nn.CrossEntropyLoss]:
         if self._loss_type == "BCE":
             return torch.nn.BCEWithLogitsLoss(reduction="sum")
 
-        if self._loss_type == "CE" or self._loss_type == "SCE" or self._loss_type == "CE_restricted":
+        if self._loss_type == "CE" or self._loss_type == "SCE":
             return torch.nn.CrossEntropyLoss()
 
         if self._loss_type == "fused_linear_CE":

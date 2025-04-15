@@ -11,7 +11,7 @@ model:
       dropout_rate: 0.1
       loss_type: CCE # CE, BCE, SCE, CCE
       loss_sample_count: null
-      negative_sampling_strategy: global_uniform  # popularity
+      negative_sampling_strategy: global_uniform  
       n_buckets: 443
       bucket_size_x: 443
       bucket_size_y: 512
