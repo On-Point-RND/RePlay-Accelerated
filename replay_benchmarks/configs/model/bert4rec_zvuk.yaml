@@ -10,7 +10,7 @@ model:
       hidden_size: 256
       dropout_rate: 0.1
       loss_type: CE # CE, BCE, SCE, CE_restricted
-      loss_sample_count: Null
+      loss_sample_count: 2047
       n_buckets: 443
       bucket_size_x: 443
       bucket_size_y: 512
@@ -18,8 +18,7 @@ model:
     training_params:
       embedding_dim: 256
       learning_rate: 0.001
-      weight_decay: 0.00001
-      batch_size: 32
+      batch_size: 1024
       num_workers: 4
       patience: 4
       max_epochs: 20

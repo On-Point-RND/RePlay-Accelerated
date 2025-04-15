@@ -31,12 +31,6 @@ try:
 except ModuleNotFoundError:
     print("cut_cross_entropy is not installed. CCE / CCE_minus loss cannot be used.")
 
-try:
-    from kernels.multinomial_sampling.cuda_multinomial_loader import cuda_multinomial
-except ModuleNotFoundError:
-    print("cuda_multinomial is not built or not found.")
-    cuda_multinomial = None
-
 
 class SasRec(lightning.LightningModule):
     """
@@ -102,6 +96,14 @@ class SasRec(lightning.LightningModule):
             Default: ``100``
         :param mix_x: Mix states embeddings with random matrix for SCE loss.
             Default: ``False``
+        :param n_buckets: Number of buckets for SCE loss.
+            Default: ``100``
+        :param bucket_size_x: Size of x buckets for SCE loss.
+            Default: ``100``
+        :param bucket_size_y: Size of y buckets for SCE loss.
+            Default: ``100``
+        :param mix_x: Mix states embeddings with random matrix for SCE loss.
+            Default: ``False``
         :param optimizer_factory: Optimizer factory.
             Default: ``FatOptimizerFactory``.
         :param lr_scheduler_factory: Learning rate schedule factory.
@@ -129,6 +131,11 @@ class SasRec(lightning.LightningModule):
         self._lr_scheduler_factory = lr_scheduler_factory
         self._loss = self._create_loss()
         self._schema = tensor_schema
+        self._n_buckets = n_buckets
+        self._bucket_size_x = bucket_size_x
+        self._bucket_size_y = bucket_size_y
+        self._mix_x = mix_x
+        assert negative_sampling_strategy in {"global_uniform", "inbatch"}
         assert negative_sampling_strategy in {"global_uniform", "inbatch", "popularity"}
 
         item_count = tensor_schema.item_id_features.item().cardinality
@@ -329,6 +336,8 @@ class SasRec(lightning.LightningModule):
     ) -> torch.Tensor:
         # [B x L x V]
         logits = self._model.forward(feature_tensors, padding_mask)
+        # [B x L x V]
+        logits = self._model.forward(feature_tensors, padding_mask)
         # labels: [B x L]
         labels = positive_labels.masked_fill(mask=(~target_padding_mask), value=-100)
 
@@ -473,12 +482,13 @@ class SasRec(lightning.LightningModule):
         target_padding_mask: torch.BoolTensor
     ) -> torch.Tensor:
         """
-        Cut Cross-Entropy (CCE), a method that computes the cross-entropy loss 
+        Cut Cross-Entropy (CCE) and Cut Cross-Entropy with Negative Sampling (CCE-),
+        methods that computes the cross-entropy loss, 
         without materializing the logits for all tokens into global memory.
-        The method is implemented in a custom kernel that performs the matrix multiplications 
-        and the log-sum-exp reduction over the vocabulary in flash memory, 
-        making global memory consumption for the cross-entropy computation negligible.
+        The method is implemented in custom Triton kernels.
 
+
+        Cut Cross Entropy for LLM is presented in
         https://arxiv.org/abs/2411.09009
         https://github.com/apple/ml-cross-entropy
         """
@@ -504,6 +514,10 @@ class SasRec(lightning.LightningModule):
         # c = self._model._head._item_embedder.get_all_item_weights()
         # padding_mask[:, 0] = False
         # targets = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
+
+        if self._loss_sample_count is not None:
+            targets = targets[target_padding_mask]
+            e = e[target_padding_mask]
 
         e = e.contiguous()
         padding_mask = padding_mask.contiguous()
@@ -548,13 +562,6 @@ class SasRec(lightning.LightningModule):
                     size=(masked_batch_seq_size, n_negative_samples),
                     dtype=torch.long,
                     device=device,
-                )
-            elif self._negative_sampling_strategy == "popularity":
-                multinomial_sample_distribution = self._popularity_distribution.to(device)
-                negative_labels = custom_multinomial_sample(
-                    multinomial_sample_distribution,
-                    batch_size=masked_batch_seq_size,
-                    num_samples=n_negative_samples,
                 )
 
             reject_labels_mask = targets.view(-1, 1) == negative_labels
@@ -603,7 +610,6 @@ class SasRec(lightning.LightningModule):
         # positive_labels = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
         # masked_batch_seq_size = positive_labels.size(0)
         # device = padding_mask.device
-
 
         positive_labels = cast(torch.LongTensor, positive_labels.view(-1, 1))
         ids = torch.arange(masked_batch_seq_size, dtype=torch.long, device=device)
@@ -703,12 +709,43 @@ class SasRec(lightning.LightningModule):
         logits = self._model.get_logits_for_restricted_loss(output_emb)
         return (logits, positive_labels)
         
+
+    def _get_restricted_logits_for_ce_loss(
+        self,
+        feature_tensors: TensorMap,
+        positive_labels: torch.LongTensor,
+        padding_mask: torch.BoolTensor,
+        target_padding_mask: torch.BoolTensor
+    ):
+        device = padding_mask.device
+        positive_labels = cast(
+            torch.LongTensor, torch.masked_select(positive_labels, target_padding_mask)
+        )  # (masked_batch_seq_size,)
+        output_emb = self._model.forward_step(feature_tensors, padding_mask)
+        output_emb = output_emb[target_padding_mask]
+
+        # Next token prediction
+        # output_emb = self._model.forward_step(feature_tensors, target_padding_mask)
+        # output_emb = output_emb[:, :-1, :][target_padding_mask[:, :-1]]
+
+        # padding_mask[:, 0] = False
+        # positive_labels = cast(torch.LongTensor, torch.masked_select(positive_labels, padding_mask))
+
+        logits = self._model.get_logits_for_restricted_loss(output_emb)
+        return (logits, positive_labels)
+        
     def _create_loss(self) -> Union[torch.nn.BCEWithLogitsLoss, torch.nn.CrossEntropyLoss]:
         if self._loss_type == "BCE":
             return torch.nn.BCEWithLogitsLoss(reduction="sum")
 
         if self._loss_type == "CE" or self._loss_type == "SCE" or self._loss_type == "CE_restricted":
             return torch.nn.CrossEntropyLoss()
+
+        if self._loss_type == "fused_linear_CE":
+            return LigerFusedLinearCrossEntropyFunction()
+
+        if self._loss_type == "CCE":
+            return LinearCrossEntropyFunction()
 
         if self._loss_type == "fused_linear_CE":
             return LigerFusedLinearCrossEntropyFunction()
@@ -885,12 +922,3 @@ def _prepare_prediction_batch(
         padding_mask = torch.nn.functional.pad(padding_mask, (max_len - sequence_item_count, 0), value=0)
         batch = SasRecPredictionBatch(query_id, padding_mask, features)
     return batch
-
-def custom_multinomial_sample(probs: torch.Tensor, batch_size: int, num_samples: int) -> torch.Tensor:
-    if cuda_multinomial is None:
-        raise RuntimeError("CUDA multinomial kernel not available.")
-
-    rand_vals = torch.rand((batch_size, num_samples), device=probs.device)
-    out = torch.empty((batch_size, num_samples), dtype=torch.long, device=probs.device)
-    cuda_multinomial.forward(probs.contiguous(), rand_vals, out, probs.numel(), num_samples)
-    return out

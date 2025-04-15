@@ -106,7 +106,7 @@ class SasRecModel(torch.nn.Module):
     def forward(
         self,
         feature_tensor: TensorMap,
-        padding_mask: torch.BoolTensor,
+        padding_mask: torch.BoolTensor
     ) -> torch.Tensor:
         """
         :param feature_tensor: Batch of features.
