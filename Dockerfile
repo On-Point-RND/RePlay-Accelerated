@@ -15,16 +15,9 @@ RUN pip install --no-cache-dir --upgrade pip wheel poetry==1.5.1 poetry-dynamic-
 COPY . RePlay-Accelerated/
 RUN cd RePlay-Accelerated && ./poetry_wrapper.sh install --all-extras
 
-RUN pip install --upgrade torch
+RUN pip install --upgrade torch==2.5.1
 RUN pip install rs_datasets
 RUN pip install Ninja==1.11.1.1
 RUN pip install -U tensorboard
-
-RUN pip3 install triton
-RUN pip3 install bitsandbytes
-RUN sed -i 's/tl\.libdevice\.llrint/tl\.extra\.cuda\.libdevice\.llrint/g' \
-    /opt/conda/lib/python3.11/site-packages/bitsandbytes/triton/quantize_global.py \
-    /opt/conda/lib/python3.11/site-packages/bitsandbytes/triton/quantize_rowwise.py \
-    /opt/conda/lib/python3.11/site-packages/bitsandbytes/triton/quantize_columnwise_and_transpose.py
 
 CMD ["bash"]

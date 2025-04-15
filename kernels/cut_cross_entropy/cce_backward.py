@@ -1,4 +1,5 @@
 # Copyright (C) 2024 Apple Inc. All Rights Reserved.
+# This software includes modifications
 import torch
 import triton
 import triton.language as tl
