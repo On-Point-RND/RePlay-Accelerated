@@ -258,12 +258,6 @@ class SasRec(lightning.LightningModule):
             loss_func = self._compute_loss_ce_restricted
         elif self._loss_type == "CCE":
             loss_func = self._compute_loss_cce
-        elif self._loss_type == "SCE":
-            loss_func = self._compute_loss_scalable_ce
-        elif self._loss_type == "CE_restricted":
-            loss_func = self._compute_loss_ce_restricted
-        elif self._loss_type == "CCE":
-            loss_func = self._compute_loss_cce
         else:
             msg = f"Not supported loss type: {self._loss_type}"
             raise ValueError(msg)

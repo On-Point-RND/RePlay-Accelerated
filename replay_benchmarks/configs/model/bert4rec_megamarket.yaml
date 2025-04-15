@@ -9,7 +9,7 @@ model:
       max_seq_len: 128
       hidden_size: 256
       dropout_rate: 0.1
-      loss_type: CE # CE, BCE, SCE, CE_restricted
+      loss_type: CCE # CE, BCE, SCE, CE_restricted
       loss_sample_count: Null
       negative_sampling_strategy: global_uniform
       n_buckets: 443
