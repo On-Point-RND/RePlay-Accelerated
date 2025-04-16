@@ -8,7 +8,7 @@ Installation via Docker is recommended by default:
 
 ```bash
 docker build -t src_project .
-docker run -it src_project
+docker run -it --gpus '"device=0"' src_project
 ```
 
 ### 🐳 Docker Setup for Project
