@@ -1,6 +1,6 @@
 defaults:
-  - dataset: megamarket
-  - model: bert4rec_megamarket
+  - dataset: movielens_1m
+  - model: sasrec_movielens_1m_cce_minus
   - mode: train
   - acceleration: null
 
