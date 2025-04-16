@@ -236,11 +236,6 @@ class TrainRunner(BaseRunner):
         self.seq_val_dataset = seq_validation_dataset
         self.seq_test_dataset = seq_test_dataset
 
-        # if self.model_cfg['model_params']['negative_sampling_strategy'] == 'popularity':
-        #     self.popularity_distribution = self._compute_tokenized_popularity(
-        #         train_dataset._interactions, self.tokenizer
-        #     )
-
         return self._prepare_dataloaders(
             seq_train_dataset,
             seq_validation_dataset,

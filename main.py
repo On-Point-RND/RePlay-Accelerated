@@ -7,7 +7,7 @@ import yaml
 import argparse
 
 from replay_benchmarks.utils.conf import load_config, seed_everything
-from replay_benchmarks import TrainRunner, InferRunner, GridParamsSearchRunner
+from replay_benchmarks import TrainRunner, InferRunner
 
 logging.basicConfig(
     level=logging.INFO,
