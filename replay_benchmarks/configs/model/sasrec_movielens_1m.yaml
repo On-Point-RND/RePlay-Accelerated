@@ -1,6 +1,6 @@
 model:
   name: sasrec
-  save_name: sasrec_CCE
+  save_name: sasrec_gBCE
 
   params:
     model_params:
@@ -9,13 +9,14 @@ model:
       max_seq_len: 128
       hidden_size: 256
       dropout_rate: 0.1
-      loss_type: CCE # CE, BCE, SCE, CCE
+      loss_type: CE # CE, BCE, SCE, CCE, gBCE
       loss_sample_count: null
       negative_sampling_strategy: global_uniform  
       n_buckets: 443
       bucket_size_x: 443
       bucket_size_y: 512
       mix_x: true
+      t: 0.6 #parameter for gBCE loss [0:1]
     training_params:
       embedding_dim: 256
       learning_rate: 0.00001
@@ -23,5 +24,5 @@ model:
       batch_size: 128
       num_workers: 4
       patience: 4
-      max_epochs: 20
+      max_epochs: 4
       precision: null #default 32, 16-mixed, bf16-mixed

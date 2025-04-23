@@ -9,13 +9,14 @@ model:
       max_seq_len: 512
       hidden_size: 256
       dropout_rate: 0.1
-      loss_type: CCE
+      loss_type: CE  # CE, BCE, SCE, CCE, gBCE
       negative_sampling_strategy: global_uniform 
       loss_sample_count: 511 # null
       n_buckets: 443
       bucket_size_x: 443
       bucket_size_y: 512
       mix_x: true
+      t: 0.6 #parameter for gBCE loss [0:1]
     training_params:
       embedding_dim: 256
       learning_rate: 0.001

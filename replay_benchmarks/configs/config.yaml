@@ -1,6 +1,6 @@
 defaults:
   - dataset: movielens_1m
-  - model: sasrec_movielens_1m_cce_minus
+  - model: sasrec_movielens_1m
   - mode: train
   - acceleration: null
 

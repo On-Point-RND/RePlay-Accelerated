@@ -58,6 +58,7 @@ class SasRec(lightning.LightningModule):
         bucket_size_x: int = 100,
         bucket_size_y: int = 100,
         mix_x: bool = False,
+        t: float = 1.0,
         optimizer_factory: OptimizerFactory = FatOptimizerFactory(),
         lr_scheduler_factory: Optional[LRSchedulerFactory] = None,
         popularity_distribution: Optional[torch.Tensor] = None,
@@ -135,6 +136,8 @@ class SasRec(lightning.LightningModule):
         self._bucket_size_x = bucket_size_x
         self._bucket_size_y = bucket_size_y
         self._mix_x = mix_x
+        self.t = t
+        assert t>=0 and t<=1
         assert negative_sampling_strategy in {"global_uniform", "inbatch"}
 
         item_count = tensor_schema.item_id_features.item().cardinality
@@ -255,6 +258,10 @@ class SasRec(lightning.LightningModule):
             loss_func = self._compute_loss_scalable_ce
         elif self._loss_type == "CCE":
             loss_func = self._compute_loss_cce
+        elif self._loss_type == "gBCE":
+            if self._loss_sample_count is None:
+                self._loss_sample_count = 1
+            loss_func = self._compute_loss_gbce
         else:
             msg = f"Not supported loss type: {self._loss_type}"
             raise ValueError(msg)
@@ -561,6 +568,32 @@ class SasRec(lightning.LightningModule):
 
         return loss
 
+    def _compute_loss_gbce(
+        self,
+        feature_tensors: TensorMap,
+        positive_labels: torch.LongTensor,
+        padding_mask: torch.BoolTensor,
+        target_padding_mask: torch.BoolTensor,
+    ) -> torch.Tensor:
+        alpha = self._loss_sample_count / (self._vocab_size - 1)
+        beta = alpha * (self.t * (1 - 1/alpha) + 1 / alpha)
+        (positive_logits, negative_logits, *_) = self._get_sampled_logits(
+            feature_tensors, positive_labels, padding_mask, target_padding_mask
+        )
+        positive_prob = torch.sigmoid(positive_logits)
+        negative_prob = torch.sigmoid(negative_logits)
+
+        # Clamp and eps for numerical stability
+        clamp_border: float = 100.0
+        eps = 1e-6
+        positive_loss = torch.clamp(torch.log((positive_prob) + eps), -clamp_border, clamp_border).sum()
+        negative_loss = torch.clamp(torch.log((1 - negative_prob) + eps), -clamp_border, clamp_border).sum()
+
+        loss = -(beta*positive_loss + negative_loss)
+        loss /= positive_logits.size(0)
+
+        return loss
+    
     def _get_sampled_logits(
         self,
         feature_tensors: TensorMap,
@@ -677,6 +710,9 @@ class SasRec(lightning.LightningModule):
 
         if self._loss_type == "CCE":
             return LinearCrossEntropyFunction()
+        
+        if self._loss_type == "gBCE":
+            return torch.nn.BCEWithLogitsLoss(reduction="sum")
 
         msg = "Not supported loss_type"
         raise NotImplementedError(msg)

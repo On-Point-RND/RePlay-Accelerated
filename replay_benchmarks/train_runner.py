@@ -7,6 +7,8 @@ from pathlib import Path
 import optuna
 import pandas as pd
 import torch
+import re
+import json
 import lightning as L
 from lightning.pytorch.loggers import CSVLogger, TensorBoardLogger
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
@@ -396,7 +398,8 @@ class TrainRunner(BaseRunner):
         ), index=False)
 
         logging.info(f"Allocated memory: {allocated} GB")
-        logging.info(f"Max allocated memory: {max_allocated} GB")    
+        logging.info(f"Max allocated memory: {max_allocated} GB") 
+        return max_allocated
 
     def run(self):
         """Execute the training pipeline."""
@@ -476,7 +479,7 @@ class TrainRunner(BaseRunner):
                 )
             else:
                 trainer.fit(model, train_dataloader, val_dataloader)
-                self._save_allocated_memory()
+                max_allocated_memory =self._save_allocated_memory()
 
             if self.model_name.lower() == "sasrec":
                 best_model = SasRec.load_from_checkpoint(
@@ -555,3 +558,27 @@ class TrainRunner(BaseRunner):
                     f"{self.model_save_name}_{self.dataset_name}_test_metrics.csv",
                 ),
             )
+            
+            result_output = {
+                'model': self.model_name,
+                'dataset': self.dataset_name,
+                'batch_size': self.model_cfg['training_params']['batch_size'],
+                'max_seq_len': self.model_cfg['model_params']['max_seq_len'],
+                'loss_sample_count': self.model_cfg['model_params']['loss_sample_count'],
+                'loss_type': self.model_cfg['model_params']['loss_type'],
+                'run_training_epoch': extract_mean_duration(profiler.summary(), "run_training_epoch"),
+                'max_allocated_memory': max_allocated_memory,
+                'NDCG_10_test': test_metrics['10']['NDCG'],
+                'Coverage_10_test': test_metrics['10']['Coverage'],
+                'Surprisal_10_test': test_metrics['10']['Surprisal'],
+            }
+            with open("result_of_training.json", "w") as f:
+                json.dump(result_output, f)
+
+def extract_mean_duration(summary_str: str, action_name: str) -> float:
+    pattern = rf"\|\s+{re.escape(action_name)}\s+\|\s+([0-9.]+)"
+    match = re.search(pattern, summary_str)
+    if match:
+        return float(match.group(1))
+    else:
+        raise ValueError(f"Action '{action_name}' not found in summary")
